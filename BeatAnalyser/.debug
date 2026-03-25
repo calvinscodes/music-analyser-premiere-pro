@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  .debug — CEP remote debugging configuration
+
+  This file enables Chrome DevTools for the Beat Analyser panel during development.
+  It must live alongside CSXS/manifest.xml in the extension root.
+
+  To open DevTools:
+    1. Ensure PlayerDebugMode = 1 (run scripts/install.sh or install.ps1 first).
+    2. Launch Premiere Pro and open the Beat Analyser panel.
+    3. Navigate to:  http://localhost:8789  in Chrome/Edge.
+       (The page title will show "Beat Analyser".)
+
+  Port 8789 is arbitrary — change it here if it conflicts with another extension.
+  Each CEP extension needs its own unique port.
+-->
+<ExtensionList>
+    <Extension Id="com.beatanalyser.panel">
+        <HostList>
+            <Host Name="PPRO" Port="8789"/>
+        </HostList>
+    </Extension>
+</ExtensionList>

@@ -4,9 +4,13 @@
   "description": "BeatAnalyser — Adobe Premiere Pro CEP panel for BPM and musical key detection",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/copyWasm.js",
-    "dev": "node scripts/symlinkExtension.js",
-    "lint": "eslint js/**/*.js",
+    "postinstall":     "node scripts/copyWasm.js",
+    "download-wasm":   "node scripts/downloadWasm.js",
+    "dev":             "npm run download-wasm && node scripts/installDev.js",
+    "build":           "node scripts/buildDist.js",
+    "build:clean":     "node scripts/buildDist.js --clean",
+    "package":         "npm run build:clean && node scripts/packageZxp.js",
+    "lint":            "eslint js/**/*.js",
     "validate-manifest": "node scripts/validateManifest.js"
   },
   "devDependencies": {
@@ -22,9 +26,9 @@
   "cep": {
     "extensionId": "com.beatanalyser.panel",
     "hostApp": "PPRO",
-    "minHostVersion": "13.0",
-    "panelWidth": 360,
-    "panelHeight": 580
+    "minHostVersion": "15.0",
+    "panelWidth": 380,
+    "panelHeight": 600
   },
   "keywords": [
     "adobe-premiere",
