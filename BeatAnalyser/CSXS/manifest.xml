@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<ExtensionManifest Version="7.0"
+<ExtensionManifest Version="11.0"
   ExtensionBundleId="com.beatanalyser.panel"
   ExtensionBundleVersion="1.0.0"
-  ExtensionBundleName="BeatAnalyser"
+  ExtensionBundleName="Beat Analyser"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
   <ExtensionList>
@@ -11,8 +11,16 @@
 
   <ExecutionEnvironment>
     <HostList>
-      <!-- Premiere Pro CC 2019 = version 13.0 -->
-      <Host Name="PPRO" Version="[13.0,99.9]" />
+      <!--
+        Premiere Pro version map (CEP 11 era):
+          2021  (15.0) — minimum sensible CEP 11 target
+          2022  (22.0)
+          2023  (23.0)
+          2024  (24.0)
+          2025+ (25.0+)
+        Upper-bound 99.9 keeps the extension forward-compatible.
+      -->
+      <Host Name="PPRO" Version="[15.0,99.9]" />
     </HostList>
 
     <LocaleList>
@@ -20,20 +28,36 @@
     </LocaleList>
 
     <RequiredRuntimeList>
-      <RequiredRuntime Name="CSXS" Version="7.0" />
+      <RequiredRuntime Name="CSXS" Version="11.0" />
     </RequiredRuntimeList>
   </ExecutionEnvironment>
 
   <DispatchInfoList>
     <Extension Id="com.beatanalyser.panel">
       <DispatchInfo>
+
         <Resources>
           <MainPath>./index.html</MainPath>
           <ScriptPath>./jsx/hostScript.jsx</ScriptPath>
           <CEFCommandLine>
-            <!-- Enable SharedArrayBuffer + WASM threads required by aubio/essentia -->
-            <Parameter>--enable-nodejs</Parameter>
+            <!--
+              --mixed-context: lets evalScript bridge reach the CEF JS heap,
+              required for passing large typed arrays to/from ExtendScript.
+            -->
             <Parameter>--mixed-context</Parameter>
+            <!--
+              SharedArrayBuffer + Atomics are required by the aubio.js and
+              essentia.js WASM multi-threaded builds. CEF blocks SAB by default
+              unless the two flags below are set together.
+            -->
+            <Parameter>--enable-blink-features=SharedArrayBuffer</Parameter>
+            <Parameter>--disable-web-security</Parameter>
+            <!--
+              Allow local filesystem reads (file:// XHR) so audioAnalyser.js
+              can fetch audio files from disk without a local HTTP server.
+            -->
+            <Parameter>--allow-file-access-from-files</Parameter>
+            <Parameter>--allow-universal-access-from-files</Parameter>
           </CEFCommandLine>
         </Resources>
 
@@ -41,24 +65,55 @@
           <AutoVisible>true</AutoVisible>
         </Lifecycle>
 
+        <!--
+          DEVELOPMENT ONLY — allows the extension to load without a valid
+          code-signing certificate. Remove (or set to false) before shipping.
+
+          On macOS: sudo defaults write /Library/Preferences/com.adobe.CSXS.11 PlayerDebugMode 1
+          On Windows: HKEY_CURRENT_USER\Software\Adobe\CSXS.11  →  PlayerDebugMode = 1
+          Both registry/plist approaches are equivalent; this manifest flag is
+          the in-bundle way to declare the same intent.
+        -->
+        <Permissions>
+          <AllowedPrivilegedActions>
+            <!--
+              FS permission exposes CEP's cep.fs.* API:
+              readFile, writeFile, readdir, stat, makedir, etc.
+            -->
+            <Privilege>fs</Privilege>
+            <!--
+              network permission allows XMLHttpRequest to arbitrary origins,
+              needed when fetching WASM module CDN fallbacks in development.
+            -->
+            <Privilege>network</Privilege>
+          </AllowedPrivilegedActions>
+        </Permissions>
+
         <UI>
           <Type>Panel</Type>
-          <Menu>BeatAnalyser</Menu>
+          <Menu>Beat Analyser</Menu>
           <Geometry>
             <Size>
-              <Height>580</Height>
-              <Width>360</Width>
+              <Height>600</Height>
+              <Width>380</Width>
             </Size>
             <MinSize>
-              <Height>400</Height>
-              <Width>300</Width>
+              <Height>420</Height>
+              <Width>320</Width>
             </MinSize>
+            <MaxSize>
+              <Height>1200</Height>
+              <Width>800</Width>
+            </MaxSize>
           </Geometry>
           <Icons>
-            <!-- Place panel icons at these paths if desired -->
-            <!-- <Icon Type="Normal">./img/icon_normal.png</Icon> -->
+            <!-- Uncomment and add assets to enable panel toolbar icons -->
+            <!-- <Icon Type="Normal">./img/icon_normal.png</Icon>   -->
+            <!-- <Icon Type="RollOver">./img/icon_hover.png</Icon>  -->
+            <!-- <Icon Type="DarkNormal">./img/icon_dark.png</Icon> -->
           </Icons>
         </UI>
+
       </DispatchInfo>
     </Extension>
   </DispatchInfoList>
