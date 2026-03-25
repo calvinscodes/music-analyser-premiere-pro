@@ -4,7 +4,7 @@
   "description": "BeatAnalyser — Adobe Premiere Pro CEP panel for BPM and musical key detection",
   "private": true,
   "scripts": {
-    "postinstall":     "node scripts/downloadWasm.js",
+    "postinstall":     "node scripts/copyWasm.js",
     "download-wasm":   "node scripts/downloadWasm.js",
     "dev":             "npm run download-wasm && node scripts/installDev.js",
     "build":           "node scripts/buildDist.js",
@@ -14,6 +14,7 @@
     "validate-manifest": "node scripts/validateManifest.js"
   },
   "devDependencies": {
+    "aubiojs": "0.2.1",
     "eslint": "^8.57.0"
   },
   "engines": {

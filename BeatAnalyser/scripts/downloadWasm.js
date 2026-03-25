@@ -27,10 +27,11 @@ const MIN_VALID_BYTES = 10 * 1024; // 10 KB
 const BUNDLES = [
     {
         name: "aubio.js",
-        // aubiojs on npm ships the WASM-backed JS as build/aubio.js
+        // Use the package root URL — both CDNs redirect to the package's `main`
+        // entry (the UMD/browser build that sets window.aubio globally).
         urls: [
-            "https://cdn.jsdelivr.net/npm/aubiojs@0.1.3/build/aubio.js",
-            "https://unpkg.com/aubiojs@0.1.3/build/aubio.js"
+            "https://cdn.jsdelivr.net/npm/aubiojs@0.2.1",
+            "https://unpkg.com/aubiojs@0.2.1"
         ]
     },
     {

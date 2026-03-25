@@ -56,15 +56,29 @@ if (!fs.existsSync(LIB)) {
 var needDownload = false;
 
 // ── aubio.js ─────────────────────────────────────────────────────────────────
-// aubiojs ships the WASM build at: node_modules/aubiojs/build/aubio.js
-var aubioSrc  = path.join(NM, "aubiojs", "build", "aubio.js");
+// Resolve the entry file from aubiojs's own package.json so this script stays
+// correct across package versions (the file path changed between 0.1.x → 0.2.x).
 var audioDest = path.join(LIB, "aubio.js");
 
 step("aubio.js …");
-if (!tryCopy(aubioSrc, audioDest)) {
-    warn("aubio.js not found in node_modules (expected: " + aubioSrc + ")");
-    needDownload = true;
-}
+(function () {
+    var pkgPath = path.join(NM, "aubiojs", "package.json");
+    if (!fs.existsSync(pkgPath)) {
+        warn("aubiojs not found in node_modules — will try CDN fallback.");
+        needDownload = true;
+        return;
+    }
+    var pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    // Prefer a browser-specific entry if declared, then fall back to main.
+    var rel = pkg.browser || pkg.main || "dist/aubio.esm.js";
+    // Normalise Windows backslashes
+    rel = rel.replace(/\\/g, "/").replace(/^\.\//, "");
+    var aubioSrc = path.join(NM, "aubiojs", rel);
+    if (!tryCopy(aubioSrc, audioDest)) {
+        warn("aubio.js not found at expected path: " + aubioSrc);
+        needDownload = true;
+    }
+}());
 
 // ── essentia.js ───────────────────────────────────────────────────────────────
 // essentia.js ships the UMD WASM build at:
