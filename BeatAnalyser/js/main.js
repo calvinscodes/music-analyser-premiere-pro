@@ -67,12 +67,9 @@
     dom.analyseBtnLabel = document.getElementById("btn-analyse-label");
     dom.addMarkersBtn   = document.getElementById("btn-add-markers");
     dom.clearMarkersBtn = document.getElementById("btn-clear-markers");
-    dom.browseExportBtn = document.getElementById("btn-browse-export");
-    dom.exportBtn       = document.getElementById("btn-export");
-
     // ── Inputs / displays ────────────────────────────────────────────
     dom.filePathDisplay = document.getElementById("file-path");
-    dom.exportPath      = document.getElementById("export-path");
+    dom.dropZone        = document.getElementById("drop-zone");
     dom.hostVersion     = document.getElementById("host-version");
 
     // ── Spinner (inside the Analyse button) ──────────────────────────
@@ -125,7 +122,19 @@
      *   4 = every 4th beat
      * Reset to 1 on clearResults() so a fresh analysis always starts unstrided.
      */
-    markerStride:   1
+    markerStride:   1,
+
+    /**
+     * Sequence start position (in seconds) of the clip being analysed.
+     * Beat timestamps from analyseAudio() are file-relative (0 = first sample).
+     * This offset converts them to sequence-absolute positions for marker placement.
+     *
+     * Set by:
+     *   loadHostedClip()   — from pathResult.startSeconds (existing clip in sequence)
+     *   autoPlaceAndMark() — from placement.startSeconds  (just-dropped file on A2)
+     * Reset to 0 on clearResults().
+     */
+    clipStartSeconds: 0
   };
 
   /* ═══════════════════════════════════════════════════════════════════ */
@@ -250,9 +259,10 @@
     dom.addMarkersBtn.disabled = true;
     dom.addMarkersBtn.setAttribute("aria-disabled", "true");
 
-    state.beatTimestamps = null;
-    state.lastResult     = null;
-    state.markerStride   = 1;
+    state.beatTimestamps  = null;
+    state.lastResult      = null;
+    state.markerStride    = 1;
+    state.clipStartSeconds = 0;
   }
 
   /**
@@ -412,6 +422,8 @@
     dom.filePathDisplay.textContent = label;
     dom.filePathDisplay.title       = filePath;
     state.filePath                  = filePath;
+    // Offset so beat markers land at the correct sequence position.
+    state.clipStartSeconds          = pathResult.startSeconds || 0;
 
     if (pathResult.isVideoFile) {
       appendLog(
@@ -651,17 +663,16 @@
       return;
     }
 
-    // Apply stride: keep only every Nth beat.
-    var timestamps;
-    if (state.markerStride > 1) {
-      var strided = [];
-      for (var si = 0; si < beatCount; si += state.markerStride) {
-        strided.push(state.beatTimestamps[si]);
-      }
-      timestamps = new Float32Array(strided);
-    } else {
-      timestamps = state.beatTimestamps;
+    // Build timestamp array: apply stride and sequence-position offset.
+    // state.clipStartSeconds is 0 when the clip position is unknown (browser
+    // mode, or analysis run before the clip was placed) and non-zero after a
+    // hosted "Analyse Active Clip" or drag-and-drop auto-place.
+    var offset = state.clipStartSeconds || 0;
+    var strided = [];
+    for (var si = 0; si < beatCount; si += state.markerStride) {
+      strided.push(state.beatTimestamps[si] + offset);
     }
+    var timestamps = new Float32Array(strided);
 
     // Step 1 — derive frame rate from sequence metadata.
     var frameRate = 0;
@@ -727,86 +738,103 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════════ */
-  /*  §8  Export timeline                                                */
+  /*  §8  Drag-and-drop helpers                                          */
   /* ═══════════════════════════════════════════════════════════════════ */
 
+  /** Audio file extensions recognised for drop validation. */
+  var AUDIO_EXTENSION_RE = /\.(wav|mp3|aif|aiff|flac|ogg|m4a|aac|opus|wma|mp2|caf)$/i;
+
+  function isAudioFilename(name) {
+    return typeof name === "string" && AUDIO_EXTENSION_RE.test(name);
+  }
+
   /**
-   * "Export Timeline" click handler.
-   * Validates the output path field then calls cepBridge.exportTimeline().
+   * Wraps FileReader.readAsArrayBuffer in a Promise so it can be awaited.
+   * @param {File} file
+   * @returns {Promise<ArrayBuffer>}
    */
+  function readFileFromDrop(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload  = function (ev) { resolve(ev.target.result); };
+      reader.onerror = function ()   { reject(new Error("FileReader failed to read the dropped file.")); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   /**
-   * Valid container extensions accepted by Adobe Media Encoder when exporting
-   * a sequence.  MXF covers both OP1a (audio+video) and D-10 variants.
-   * The check is case-insensitive to handle .MP4 / .MOV etc. from Windows paths.
+   * Auto-places beat markers after a drag-and-drop analysis.
+   * Applies auto-stride to stay within Premiere's 999-marker cap and
+   * offsets timestamps by the clip's sequence start position.
+   *
+   * @param {number} startOffsetSeconds  Sequence position of the clip start.
    */
-  var VALID_EXPORT_EXT = /\.(mp4|mov|mxf)$/i;
+  async function autoPlaceMarkersOnTimeline(startOffsetSeconds) {
+    if (!state.beatTimestamps || state.beatTimestamps.length === 0) return;
 
-  async function onExport() {
-    var outputPath = dom.exportPath.value.trim();
-
-    if (!outputPath) {
-      appendLog("Enter an output file path before exporting.", "error");
-      dom.exportPath.focus();
-      return;
-    }
-
-    if (!VALID_EXPORT_EXT.test(outputPath)) {
-      var ext = outputPath.lastIndexOf(".") !== -1
-        ? outputPath.slice(outputPath.lastIndexOf("."))
-        : "(no extension)";
+    var beatCount = state.beatTimestamps.length;
+    var autoStride = 1;
+    if (beatCount > PREMIERE_MARKER_LIMIT) {
+      autoStride = beatCount > PREMIERE_MARKER_LIMIT * 2 ? 4 : 2;
       appendLog(
-        "Export path must end in .mp4, .mov, or .mxf — got: " + ext + ". " +
-        "Update the path or use the \u2026 browse button to choose a destination.",
-        "error"
+        beatCount + " beats detected — auto-stride " + autoStride +
+        " (every " + autoStride + " beats) to stay within the " +
+        PREMIERE_MARKER_LIMIT + "-marker limit.",
+        "warn"
       );
-      dom.exportPath.focus();
-      return;
     }
 
-    appendLog("Queuing AME export: " + basename(outputPath) + "…");
+    var offset  = startOffsetSeconds || 0;
+    var strided = [];
+    for (var si = 0; si < beatCount; si += autoStride) {
+      strided.push(state.beatTimestamps[si] + offset);
+    }
+    var timestamps = new Float32Array(strided);
+
+    var frameRate = 0;
+    try {
+      var seqInfo = await cepBridge.getActiveSequenceInfo();
+      if (seqInfo && seqInfo.timebase) frameRate = ticksToFps(seqInfo.timebase);
+    } catch (_) { /* non-fatal */ }
+
+    appendLog(
+      "Auto-placing " + timestamps.length + " beat marker" +
+      (timestamps.length !== 1 ? "s" : "") +
+      (autoStride > 1 ? " (every " + autoStride + " beats)" : "") + "…"
+    );
 
     try {
-      var result = await cepBridge.exportTimeline(outputPath);
-      appendLog(
-        "Export queued — "" + result.sequenceName + "" → " +
-        basename(result.outputPath) +
-        "  (AME job " + result.jobID + ")",
-        "success"
-      );
+      var result = await cepBridge.sendMarkersToTimeline(timestamps, frameRate);
+      var msg = "Placed " + result.placed + " beat marker" + (result.placed !== 1 ? "s" : "");
+      if (result.removed > 0) msg += " (replaced " + result.removed + " existing)";
+      appendLog(msg, "success");
     } catch (err) {
-      handleError(err);
+      appendLog("Marker placement failed: " + err.message, "error");
     }
   }
 
   /**
-   * "…" browse button handler.
-   * Opens an ExtendScript save-file dialog to choose the export destination.
-   * No-ops in browser / dev mode (save dialogs require CEP).
+   * Places a dropped audio file on timeline track A2, then auto-places
+   * beat markers at the correct sequence positions.
+   *
+   * @param {string} filePath  Absolute OS path to the audio file.
    */
-  function onBrowseExport() {
-    if (!cepBridge.isHosted) {
-      appendLog("Save dialog requires Premiere Pro.", "warn");
-      return;
+  async function autoPlaceAndMark(filePath) {
+    appendLog("Placing \u201c" + basename(filePath) + "\u201d on A2\u2026");
+    try {
+      var placement = await cepBridge.placeAudioOnTimeline(filePath, 1);
+      var startSecs = (placement && typeof placement.startSeconds === "number")
+        ? placement.startSeconds : 0;
+      state.clipStartSeconds = startSecs;
+      appendLog(
+        "Placed on " + (placement.trackLabel || "A2") +
+        " at " + startSecs.toFixed(3) + "s",
+        "success"
+      );
+      await autoPlaceMarkersOnTimeline(startSecs);
+    } catch (err) {
+      appendLog("Auto-place failed: " + err.message, "error");
     }
-
-    /*
-     * We use evalScript() directly with an inline expression because there is
-     * no dedicated hostScript function for save dialogs — it is a one-liner
-     * that does not need the { success, data } envelope.
-     * The result is a raw path string (or empty string on cancel).
-     */
-    cepBridge.evalScript(
-      "var _sf = File.saveDialog(" +
-        "'Choose export destination'," +
-        "'MP4:*.mp4,MOV:*.mov,MXF:*.mxf,AVI:*.avi'" +
-      "); _sf ? _sf.fsName : ''"
-    ).then(function (path) {
-      if (path && path.trim()) {
-        dom.exportPath.value = path.trim();
-      }
-    }).catch(function (err) {
-      appendLog("Save dialog failed: " + err.message, "error");
-    });
   }
 
   /* ═══════════════════════════════════════════════════════════════════ */
@@ -814,72 +842,90 @@
   /* ═══════════════════════════════════════════════════════════════════ */
 
   /**
-   * Wires drag-and-drop for audio files onto the panel body.
+   * Wires drag-and-drop for audio files onto the panel body and the drop zone.
    *
-   * The CSS class "drag-over" on <body> triggers the overlay defined in
-   * styles.css (body.drag-over::after).
+   * In hosted (CEP) mode the non-standard `file.path` property exposes the
+   * OS-level absolute path so the file can be imported into the Premiere
+   * project via ExtendScript importFiles().
    *
-   * Dropped files bypass cepBridge and are read via FileReader, making
-   * drag-and-drop work in both hosted and browser-preview modes.
+   * In browser / dev mode the file is still analysed via FileReader but the
+   * auto-place step is skipped (cepBridge.isHosted is false).
    */
   function wireDragAndDrop() {
+    var dropZone = dom.dropZone;
+
+    // ── dragover ──────────────────────────────────────────────────────
     document.body.addEventListener("dragover", function (e) {
       e.preventDefault();
       document.body.classList.add("drag-over");
+      if (dropZone) dropZone.classList.add("drag-active");
     });
 
+    // ── dragleave ─────────────────────────────────────────────────────
     document.body.addEventListener("dragleave", function (e) {
-      /*
-       * Only remove the class when the pointer leaves the document entirely.
-       * relatedTarget is null when leaving to outside the window; it points
-       * to the documentElement briefly as the pointer crosses the window edge
-       * on some platforms.
-       */
       if (!e.relatedTarget || e.relatedTarget === document.documentElement) {
         document.body.classList.remove("drag-over");
+        if (dropZone) dropZone.classList.remove("drag-active");
       }
     });
 
-    document.body.addEventListener("drop", function (e) {
+    // ── drop ──────────────────────────────────────────────────────────
+    document.body.addEventListener("drop", async function (e) {
       e.preventDefault();
       document.body.classList.remove("drag-over");
+      if (dropZone) dropZone.classList.remove("drag-active");
 
       var file = e.dataTransfer && e.dataTransfer.files[0];
       if (!file) return;
 
-      if (!file.type.startsWith("audio/")) {
+      // Validate by extension (MIME type is unreliable in CEF).
+      if (!isAudioFilename(file.name)) {
         appendLog(
-          "Dropped item is not an audio file: " + (file.name || "(unknown)"),
+          "Dropped item does not appear to be an audio file: " +
+          (file.name || "(unknown)"),
           "error"
         );
         return;
       }
 
-      appendLog("Loading dropped file: " + file.name);
-      dom.filePathDisplay.textContent = file.name;
-      dom.filePathDisplay.title       = file.name;
-      state.filePath                  = file.name;
+      var displayName = file.name;
+      dom.filePathDisplay.textContent = displayName;
+      dom.filePathDisplay.title       = displayName;
+      state.filePath                  = displayName;
 
       clearResults();
       setLoading(true);
 
-      var reader    = new FileReader();
-      reader.onload = function (ev) {
-        runAnalysis(ev.target.result)
-          .catch(function (err) {
-            handleError(err);
-            clearResults();
-          })
-          .then(function () {
-            dom.resultsSection.classList.remove("is-loading");
-            setLoading(false);
-          });
-      };
-      reader.onerror = function () {
-        appendLog("FileReader failed to read the dropped file.", "error");
+      try {
+        // Read audio bytes for analysis.
+        appendLog("Reading dropped file: " + displayName);
+        var arrayBuffer = await readFileFromDrop(file);
+
+        // Analyse BPM + key (stores results in state).
+        await runAnalysis(arrayBuffer);
+
+        // In hosted mode: import into project, place on A2, place markers.
+        if (cepBridge.isHosted) {
+          // CEF/Chromium exposes the OS path as a non-standard file.path
+          // property on File objects obtained via drag-and-drop.
+          var osPath = file.path || "";
+          if (osPath) {
+            await autoPlaceAndMark(osPath);
+          } else {
+            appendLog(
+              "OS path unavailable — analysis complete but auto-place skipped. " +
+              "Use \u201cPlace Beat Markers\u201d manually.",
+              "warn"
+            );
+          }
+        }
+      } catch (err) {
+        handleError(err);
+        clearResults();
+      } finally {
+        dom.resultsSection.classList.remove("is-loading");
         setLoading(false);
-      };
-      reader.readAsArrayBuffer(file);
+      }
     });
   }
 
@@ -911,13 +957,6 @@
     dom.analyseBtn.addEventListener("click",      onAnalyse);
     dom.addMarkersBtn.addEventListener("click",   onPlaceMarkers);
     dom.clearMarkersBtn.addEventListener("click", onClearMarkers);
-    dom.exportBtn.addEventListener("click",       onExport);
-    dom.browseExportBtn.addEventListener("click", onBrowseExport);
-
-    // Press Enter in the export path field to trigger the export.
-    dom.exportPath.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") onExport();
-    });
 
     // ── Drag-and-drop ─────────────────────────────────────────────
     wireDragAndDrop();

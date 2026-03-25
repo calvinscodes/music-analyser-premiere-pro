@@ -516,41 +516,64 @@ ol { list-style: none; }
 
 
 /* ═══════════════════════════════════════════════════════════════════════
-   §11  Export — path input row
+   §11  Drop zone
    ═══════════════════════════════════════════════════════════════════════ */
 
-.path-row {
-  display:   flex;
-  gap:       4px;
-  align-items: center;
+/*
+ * Visible drop target inside the primary action card.
+ * main.js adds .drag-active when a drag enters this element.
+ * The full-panel overlay (§13) activates when dragging anywhere over <body>.
+ */
+.drop-zone {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  gap:            5px;
+  margin-top:     8px;
+  padding:        14px 12px;
+  border:         2px dashed var(--border-mid);
+  border-radius:  var(--radius-lg);
+  cursor:         default;
+  transition:     border-color var(--ease-m),
+                  background-color var(--ease-m);
 }
 
-.path-input {
-  flex:          1;
-  min-width:     0;          /* allow flex shrink below intrinsic width */
-  font-family:   var(--font-mono);
-  font-size:     11px;
-  color:         var(--text-primary);
-  background:    var(--bg-input);
-  border:        1px solid var(--border-mid);
-  border-radius: var(--radius-sm);
-  padding:       5px 8px;
-  height:        28px;
-  outline:       none;
-  transition:    border-color var(--ease), box-shadow var(--ease);
+.drop-zone:hover,
+.drop-zone.drag-active {
+  border-color:     var(--accent);
+  background-color: var(--accent-muted);
 }
 
-.path-input::placeholder {
-  color: var(--text-placeholder);
+.drop-zone-icon {
+  width:   22px;
+  height:  20px;
+  color:   var(--text-muted);
+  transition: color var(--ease-m);
 }
 
-.path-input:hover {
-  border-color: var(--border-focus);
+.drop-zone:hover .drop-zone-icon,
+.drop-zone.drag-active .drop-zone-icon {
+  color: var(--accent);
 }
 
-.path-input:focus {
-  border-color: var(--border-focus);
-  box-shadow:   var(--accent-glow);
+.drop-zone-label {
+  font-size:   12px;
+  font-weight: 500;
+  color:       var(--text-secondary);
+  transition:  color var(--ease-m);
+}
+
+.drop-zone:hover .drop-zone-label,
+.drop-zone.drag-active .drop-zone-label {
+  color: var(--accent);
+}
+
+.drop-zone-sub {
+  font-size:  10px;
+  color:      var(--text-muted);
+  text-align: center;
+  line-height: 1.4;
 }
 
 
@@ -625,7 +648,7 @@ ol { list-style: none; }
  * The ::after pseudo-element renders a full-panel overlay.
  */
 body.drag-over::after {
-  content:         "Drop audio file";
+  content:         "Drop to analyse \2192 place on A2 \2192 beat markers";
   position:        fixed;
   inset:           0;
   display:         flex;

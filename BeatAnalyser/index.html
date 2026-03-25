@@ -74,8 +74,40 @@
       </button>
 
       <!--
-        Shows the file path of the clip currently loaded for analysis.
-        main.js updates #file-path (legacy id) so we alias both.
+        Drop zone — accepts audio files dragged from the OS or from Premiere's
+        Project panel.  main.js handles the drop event, analyses the audio,
+        imports the file into the project, places it on A2, and places beat
+        markers automatically.
+      -->
+      <div class="drop-zone" id="drop-zone"
+           role="region"
+           aria-label="Drop audio file to analyse and auto-place on A2">
+        <svg class="drop-zone-icon"
+             viewBox="0 0 20 18"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="1.5"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             xmlns="http://www.w3.org/2000/svg"
+             aria-hidden="true"
+             focusable="false">
+          <!-- Upload arrow -->
+          <polyline points="10,1 10,12"/>
+          <polyline points="6,5 10,1 14,5"/>
+          <!-- Tray baseline -->
+          <path d="M1 13v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3"/>
+        </svg>
+        <span class="drop-zone-label">Drop audio here</span>
+        <span class="drop-zone-sub">
+          Analyses BPM &amp; key, imports into project,
+          places on A2 with beat markers
+        </span>
+      </div>
+
+      <!--
+        Shows the clip or file currently loaded.
+        Updated by main.js on both the "Analyse Active Clip" and drop paths.
       -->
       <p class="clip-path" id="file-path" title="">No clip loaded</p>
 
@@ -136,14 +168,19 @@
 
 
     <!-- ── Timeline markers ───────────────────────────────────────────── -->
+    <!--
+      Beat markers are placed automatically after a drag-and-drop.
+      This section exposes the manual controls for re-placing or clearing
+      markers after an "Analyse Active Clip" run, or to override auto-placement.
+    -->
     <section class="card" aria-label="Timeline marker controls">
-      <h2 class="card-title">Timeline</h2>
+      <h2 class="card-title">Beat Markers</h2>
 
       <div class="btn-group">
         <!--
-          Disabled until analyseAudio() completes successfully.
-          main.js enables this button and references it as both
-          #btn-add-markers (legacy) and #btn-place-markers (new).
+          Enabled by main.js after a successful analysis.
+          On drop, markers are placed automatically; this button allows
+          manual re-placement (e.g. after changing the stride).
         -->
         <button id="btn-add-markers"
                 class="btn btn-primary"
@@ -156,49 +193,6 @@
           Clear
         </button>
       </div>
-
-    </section>
-
-
-    <!-- ── Export ─────────────────────────────────────────────────────── -->
-    <section class="card" aria-label="Export controls">
-      <h2 class="card-title">Export</h2>
-
-      <!-- Output path row: text input + browse button -->
-      <div class="path-row">
-        <input id="export-path"
-               type="text"
-               class="path-input"
-               placeholder="Output file path…"
-               spellcheck="false"
-               autocomplete="off"
-               aria-label="Export output path" />
-
-        <button id="btn-browse-export"
-                class="btn btn-ghost btn-icon"
-                title="Choose output location"
-                aria-label="Browse for export output location">
-          <!--
-            Folder icon — two lines representing an open folder.
-          -->
-          <svg viewBox="0 0 14 12"
-               fill="none"
-               stroke="currentColor"
-               stroke-width="1.4"
-               stroke-linecap="round"
-               stroke-linejoin="round"
-               xmlns="http://www.w3.org/2000/svg"
-               aria-hidden="true"
-               focusable="false">
-            <path d="M1 2.5h4l1.5 1.5H13v7H1V2.5Z"/>
-            <path d="M1 4h12"/>
-          </svg>
-        </button>
-      </div>
-
-      <button id="btn-export" class="btn btn-secondary btn-block" style="margin-top:8px;">
-        Export Timeline
-      </button>
 
     </section>
 

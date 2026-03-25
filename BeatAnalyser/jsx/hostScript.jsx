@@ -177,7 +177,161 @@ function _secondsToTicks(seconds) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  §2  getActiveSequenceAudioPath                                     */
+/*  §2  importAndPlaceAudioOnTrack                                     */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Imports an audio file into the active Premiere Pro project (or reuses the
+ * existing project item when the file is already imported) and places it on
+ * the specified audio track at the first available gap after any existing
+ * content on that track.
+ *
+ * How Premiere clip placement works from ExtendScript
+ * ---------------------------------------------------
+ * Premiere exposes `Track.insertClip(projectItem, startTimeSeconds)`.
+ * "Insert" at a time beyond the last clip is equivalent to an append —
+ * no existing content is shifted.  We calculate the end time of the last
+ * clip on the target track and use that as the insertion point, so dropped
+ * clips accumulate sequentially on each successive drop.
+ *
+ * Duplicate-import handling
+ * -------------------------
+ * `app.project.importFiles()` imports the file even if it is already in the
+ * project, creating a duplicate item.  We therefore first search all project
+ * items for a matching `getMediaPath()` and only call `importFiles()` when
+ * no match is found.  The search is recursive so files inside bins are found.
+ *
+ * @param {string} filePath          Absolute OS-native path to the audio file.
+ * @param {number} targetTrackIndex  0-based audio track index (0 = A1, 1 = A2).
+ *
+ * Return payload (success):
+ *   {
+ *     placed:       true,
+ *     clipName:     string,   // project item name
+ *     trackIndex:   number,   // same as targetTrackIndex
+ *     trackLabel:   string,   // e.g. "A2"
+ *     startSeconds: number,   // clip start position in the sequence
+ *     filePath:     string    // normalised OS path
+ *   }
+ *
+ * @returns {string} JSON envelope
+ */
+function importAndPlaceAudioOnTrack(filePath, targetTrackIndex) {
+  try {
+    /* ── Guards ────────────────────────────────────────────────────── */
+    if (!app.project) return _err("No project is currently open.");
+    var seq = app.project.activeSequence;
+    if (!seq) {
+      return _err(
+        "No active sequence. Click a sequence tab in the timeline to make it active."
+      );
+    }
+
+    if (typeof filePath !== "string" || filePath === "") {
+      return _err("importAndPlaceAudioOnTrack: filePath must be a non-empty string.");
+    }
+
+    var audioFile = new File(filePath);
+    if (!audioFile.exists) {
+      return _err("File not found: " + filePath);
+    }
+
+    // Use the OS-normalised path throughout to avoid mixed-slash issues.
+    var normPath = audioFile.fsName;
+
+    var trackIdx = parseInt(targetTrackIndex);
+    if (isNaN(trackIdx) || trackIdx < 0) trackIdx = 1;   // default to A2
+
+    if (trackIdx >= seq.audioTracks.numTracks) {
+      return _err(
+        "Audio track A" + (trackIdx + 1) + " does not exist. " +
+        "The sequence only has " + seq.audioTracks.numTracks + " audio track(s). " +
+        "Add more audio tracks via Sequence \u2192 Add Tracks."
+      );
+    }
+
+    /* ── Find existing project item by media path ──────────────────── */
+    function findItemByPath(binItem, targetPath) {
+      for (var i = 0; i < binItem.children.numItems; i++) {
+        var child = binItem.children[i];
+        var childPath = "";
+        try { childPath = child.getMediaPath(); } catch (e) {}
+        if (childPath === targetPath) return child;
+        // Recurse into bins (children with their own children collection).
+        if (child.children && child.children.numItems > 0) {
+          var found = findItemByPath(child, targetPath);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    var projectItem = findItemByPath(app.project.rootItem, normPath);
+
+    /* ── Import if not already present ────────────────────────────── */
+    if (!projectItem) {
+      // importFiles(paths, suppressUI, targetBin, importAsNumberedStill)
+      app.project.importFiles(
+        [normPath],
+        true,                    // suppressUI — no import dialog
+        app.project.rootItem,    // import into the root bin
+        false                    // not a numbered still sequence
+      );
+      projectItem = findItemByPath(app.project.rootItem, normPath);
+    }
+
+    if (!projectItem) {
+      return _err(
+        "Import appeared to succeed but the item could not be located in the " +
+        "project panel.  Try File \u2192 Import manually: " + normPath
+      );
+    }
+
+    /* ── Find insertion time: end of last clip on target track ──────── */
+    var targetTrack   = seq.audioTracks[trackIdx];
+    var insertSeconds = 0;
+
+    if (targetTrack.clips && targetTrack.clips.numItems > 0) {
+      for (var c = 0; c < targetTrack.clips.numItems; c++) {
+        var clipEnd = targetTrack.clips[c].end.seconds;
+        if (clipEnd > insertSeconds) insertSeconds = clipEnd;
+      }
+    }
+
+    /* ── Place clip on track ──────────────────────────────────────── */
+    // Track.insertClip(projectItem, startTimeInSeconds)
+    // Inserting at or beyond the last clip end is a non-destructive append.
+    targetTrack.insertClip(projectItem, insertSeconds);
+
+    /* ── Read back actual start time of placed clip ────────────────── */
+    // The placed clip is the one whose start is nearest to insertSeconds.
+    var placedStartSeconds = insertSeconds;
+    if (targetTrack.clips && targetTrack.clips.numItems > 0) {
+      for (var d = 0; d < targetTrack.clips.numItems; d++) {
+        var tc = targetTrack.clips[d];
+        if (Math.abs(tc.start.seconds - insertSeconds) < 0.1) {
+          placedStartSeconds = tc.start.seconds;
+          break;
+        }
+      }
+    }
+
+    return _ok({
+      placed:       true,
+      clipName:     projectItem.name,
+      trackIndex:   trackIdx,
+      trackLabel:   "A" + (trackIdx + 1),
+      startSeconds: placedStartSeconds,
+      filePath:     normPath
+    });
+
+  } catch (e) {
+    return _err(e.message);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  §3  getActiveSequenceAudioPath                                     */
 /* ═══════════════════════════════════════════════════════════════════ */
 
 /**

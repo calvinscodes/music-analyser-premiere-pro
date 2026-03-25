@@ -308,20 +308,46 @@
   }
 
   /**
+   * Imports an audio file into the active Premiere Pro project and places it
+   * on the specified audio track at the first available position after any
+   * existing content on that track.
+   *
+   * If the file is already in the project it is reused (no duplicate import).
+   * The clip is appended after the last existing clip on the target track, or
+   * placed at the sequence start when the track is empty.
+   *
+   * Delegates to: hostScript.jsx → importAndPlaceAudioOnTrack(filePath, trackIdx)
+   *
+   * @param  {string} filePath     Absolute OS-native path to the audio file.
+   * @param  {number} [trackIndex=1]  0-based audio track index (default 1 = A2).
+   * @returns {Promise<{
+   *   placed:       boolean,
+   *   clipName:     string,
+   *   trackIndex:   number,
+   *   trackLabel:   string,   // e.g. "A2"
+   *   startSeconds: number,
+   *   filePath:     string
+   * }>}
+   */
+  function placeAudioOnTimeline(filePath, trackIndex) {
+    if (typeof filePath !== "string" || filePath.trim() === "") {
+      return Promise.reject(new BridgeError(
+        "placeAudioOnTimeline: filePath must be a non-empty string."
+      ));
+    }
+    var idx = (typeof trackIndex === "number" && trackIndex >= 0) ? trackIndex : 1;
+    return evalScript("importAndPlaceAudioOnTrack", filePath, idx);
+  }
+
+  /**
    * Triggers an Adobe Media Encoder export of the active sequence.
-   * AME is launched if not already running.  The export runs asynchronously
-   * inside AME; this call resolves as soon as the job has been queued.
+   * Kept for backwards compatibility; not wired in the default UI.
+   * AME is launched if not already running.
    *
    * Delegates to: hostScript.jsx → exportSequenceWithMarkers(outputPath)
    *
    * @param  {string} outputPath  Absolute OS path including filename + extension.
-   *                              The parent directory must already exist.
-   * @returns {Promise<{
-   *   queued:       boolean,
-   *   jobID:        string,
-   *   outputPath:   string,
-   *   sequenceName: string
-   * }>}
+   * @returns {Promise<{ queued, jobID, outputPath, sequenceName }>}
    */
   function exportTimeline(outputPath) {
     if (typeof outputPath !== "string" || outputPath.trim() === "") {
@@ -520,10 +546,11 @@
     // ── Core ───────────────────────────────────────────────────────────
     evalScript:           evalScript,
 
-    // ── Primary API (matches task spec) ───────────────────────────────
-    getAudioFilePath:     getAudioFilePath,
+    // ── Primary API ────────────────────────────────────────────────────
+    getAudioFilePath:      getAudioFilePath,
     sendMarkersToTimeline: sendMarkersToTimeline,
-    exportTimeline:       exportTimeline,
+    placeAudioOnTimeline:  placeAudioOnTimeline,
+    exportTimeline:        exportTimeline,       // kept; not wired in default UI
     readFileAsArrayBuffer: readFileAsArrayBuffer,
 
     // ── Compatibility (used by main.js) ────────────────────────────────
