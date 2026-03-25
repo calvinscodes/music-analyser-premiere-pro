@@ -3,117 +3,235 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BeatAnalyser</title>
-
+  <title>Beat Analyser</title>
   <link rel="stylesheet" href="css/styles.css" />
 
   <!--
-    CSInterface — Adobe CEP host communication SDK.
-    Ship the real CSInterface.js from the CEP SDK alongside the extension.
-    The path below assumes it lives at the extension root.
-    Download from: https://github.com/Adobe-CEP/CSInterface
+    CSInterface — Adobe CEP host SDK.
+    Copy the real CSInterface.js from https://github.com/Adobe-CEP/CSInterface
+    into the extension root before installing.
   -->
   <script src="CSInterface.js"></script>
 
   <!--
-    WASM bundles — aubio.js and essentia.js are large (~2–8 MB each).
-    They are NOT bundled in this repository. Obtain them separately:
-
-      aubio.js:
-        npm install aubiojs            (provides dist/aubio.js)
-        – or –
-        https://github.com/qiuxiang/aubiojs/releases
-
-      essentia.js:
-        npm install essentia.js        (provides dist/essentia.js)
-        – or –
-        https://github.com/MTG/essentia.js/releases
-
-    Copy the built files into the lib/ directory.
+    WASM bundles.  Not committed to the repo — run `npm install` to copy them
+    from node_modules into lib/.  See lib/aubio.js and lib/essentia.js for
+    stub files and installation instructions.
   -->
   <script src="lib/aubio.js"></script>
   <script src="lib/essentia.js"></script>
 </head>
+
 <body>
 
-  <div class="panel">
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Panel header
+       ═══════════════════════════════════════════════════════════════════ -->
+  <header class="panel-header">
 
-    <!-- ── Header ──────────────────────────────────────────────────── -->
-    <div class="section">
-      <div class="section-title">BeatAnalyser</div>
-      <div id="status" class="status">Initialising…</div>
+    <div class="header-brand">
+      <!--
+        Inline SVG waveform icon — 7 bars of staggered heights simulate
+        an audio spectral display.  fill="currentColor" inherits the accent
+        colour from the parent .header-brand rule.
+      -->
+      <svg class="header-icon"
+           viewBox="0 0 30 20"
+           fill="currentColor"
+           xmlns="http://www.w3.org/2000/svg"
+           aria-hidden="true"
+           focusable="false">
+        <rect x="0"  y="9"  width="3" height="3"  rx="1.5" opacity="0.45"/>
+        <rect x="4"  y="5"  width="3" height="11" rx="1.5" opacity="0.65"/>
+        <rect x="8"  y="1"  width="3" height="18" rx="1.5" opacity="0.90"/>
+        <rect x="12" y="6"  width="3" height="8"  rx="1.5" opacity="0.75"/>
+        <rect x="16" y="0"  width="3" height="20" rx="1.5"/>
+        <rect x="20" y="4"  width="3" height="12" rx="1.5" opacity="0.80"/>
+        <rect x="27" y="8"  width="3" height="5"  rx="1.5" opacity="0.40"/>
+      </svg>
+      <span class="header-title">Beat Analyser</span>
     </div>
 
-    <!-- ── File loader ──────────────────────────────────────────────── -->
-    <div class="section">
-      <div class="section-title">Audio File</div>
-      <div id="file-path" class="file-path">No file selected</div>
-      <div class="btn-row">
-        <button id="btn-pick-file" class="btn-secondary">Browse…</button>
-        <button id="btn-analyse"   class="btn-primary">Analyse</button>
-        <span id="spinner" class="spinner" style="display:none;"></span>
+    <!-- Populated by cepBridge.getHostInfo() on init -->
+    <span class="header-host" id="host-version" aria-label="Host application version"></span>
+
+  </header>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Scrollable panel body
+       ═══════════════════════════════════════════════════════════════════ -->
+  <main class="panel-body">
+
+
+    <!-- ── Primary action ─────────────────────────────────────────────── -->
+    <section class="card" aria-label="Analysis controls">
+
+      <button id="btn-analyse" class="btn btn-primary btn-block">
+        <!-- Spinner: shown/hidden by main.js via display style -->
+        <span class="btn-spinner" id="spinner" aria-hidden="true" style="display:none;"></span>
+        <span id="btn-analyse-label">Analyse Active Clip</span>
+      </button>
+
+      <!--
+        Shows the file path of the clip currently loaded for analysis.
+        main.js updates #file-path (legacy id) so we alias both.
+      -->
+      <p class="clip-path" id="file-path" title="">No clip loaded</p>
+
+    </section>
+
+
+    <!-- ── Analysis results ───────────────────────────────────────────── -->
+    <!--
+      .has-results is toggled by main.js after a successful analysis run.
+      Without it all metric values render in their dimmed placeholder state.
+    -->
+    <section class="card results-card" id="results-section" aria-label="Analysis results" aria-live="polite">
+
+      <!-- BPM — hero metric -->
+      <div class="bpm-display">
+        <output class="bpm-number" id="bpm-value" aria-label="Beats per minute">—</output>
+        <span class="bpm-label" aria-hidden="true">BPM</span>
       </div>
-    </div>
 
-    <!-- ── Results ──────────────────────────────────────────────────── -->
-    <div class="section results-section" id="results-section">
-      <div class="section-title">Analysis Results</div>
-      <div class="results-grid">
+      <div class="results-divider" role="separator"></div>
 
-        <div class="result-card">
-          <div class="label">BPM</div>
-          <div class="value bpm-value" id="bpm-value">—</div>
-        </div>
-
-        <div class="result-card">
-          <div class="label">Confidence</div>
-          <div class="value" id="confidence-value">—</div>
-        </div>
-
-        <div class="result-card">
-          <div class="label">Key</div>
-          <div class="value" id="key-value">—</div>
-        </div>
-
-        <div class="result-card">
-          <div class="label">Scale</div>
-          <div class="value" id="scale-value">—</div>
-        </div>
-
-        <div class="result-card">
-          <div class="label">Beats Detected</div>
-          <div class="value" id="beat-count">—</div>
-        </div>
-
+      <!-- Key + Scale — rendered as "A Minor" or "C# Major" -->
+      <div class="key-row">
+        <span class="key-label">Key</span>
+        <output class="key-name" id="key-display" aria-label="Musical key">—</output>
       </div>
-    </div>
 
-    <!-- ── Timeline markers ─────────────────────────────────────────── -->
-    <div class="section">
-      <div class="section-title">Timeline Markers</div>
-      <div class="btn-row">
-        <button id="btn-add-markers"   class="btn-primary">Add Beat Markers</button>
-        <button id="btn-clear-markers" class="btn-danger">Clear Markers</button>
-      </div>
-    </div>
-
-    <!-- ── Sequence clips ───────────────────────────────────────────── -->
-    <div class="section">
-      <div class="section-title">Sequence Audio Clips</div>
-      <div class="btn-row" style="margin-bottom:8px;">
-        <button id="btn-get-clips" class="btn-secondary">Refresh Clips</button>
-      </div>
-      <div class="clips-container">
-        <div id="clips-table">
-          <p class="empty">Click "Refresh Clips" to list clips from the active sequence.</p>
+      <!-- Key strength progress bar -->
+      <div class="strength-row">
+        <span class="strength-label">Strength</span>
+        <div class="strength-track"
+             role="progressbar"
+             aria-valuenow="0"
+             aria-valuemin="0"
+             aria-valuemax="100"
+             aria-label="Key detection strength">
+          <div class="strength-fill" id="key-strength-fill"></div>
         </div>
+        <output class="strength-value" id="key-strength-value" aria-label="Key strength value">—</output>
       </div>
-    </div>
 
-  </div><!-- /.panel -->
+      <!-- Beat count -->
+      <p class="beat-count" id="beat-count" aria-label="Beat count">— beats detected</p>
 
-  <!-- Application scripts (load after DOM) -->
+
+      <!--
+        ── Compatibility outputs ──────────────────────────────────────────
+        These elements are kept for main.js backwards-compatibility.
+        They hold the raw values that the new display elements are built from,
+        but are not directly visible in the UI.
+        Update main.js to drive the new display elements directly when ready.
+      -->
+      <output id="key-value"        aria-hidden="true" hidden></output>
+      <output id="scale-value"      aria-hidden="true" hidden></output>
+      <output id="confidence-value" aria-hidden="true" hidden></output>
+
+    </section>
+
+
+    <!-- ── Timeline markers ───────────────────────────────────────────── -->
+    <section class="card" aria-label="Timeline marker controls">
+      <h2 class="card-title">Timeline</h2>
+
+      <div class="btn-group">
+        <!--
+          Disabled until analyseAudio() completes successfully.
+          main.js enables this button and references it as both
+          #btn-add-markers (legacy) and #btn-place-markers (new).
+        -->
+        <button id="btn-add-markers"
+                class="btn btn-primary"
+                disabled
+                aria-disabled="true">
+          Place Beat Markers
+        </button>
+
+        <button id="btn-clear-markers" class="btn btn-ghost">
+          Clear
+        </button>
+      </div>
+
+    </section>
+
+
+    <!-- ── Export ─────────────────────────────────────────────────────── -->
+    <section class="card" aria-label="Export controls">
+      <h2 class="card-title">Export</h2>
+
+      <!-- Output path row: text input + browse button -->
+      <div class="path-row">
+        <input id="export-path"
+               type="text"
+               class="path-input"
+               placeholder="Output file path…"
+               spellcheck="false"
+               autocomplete="off"
+               aria-label="Export output path" />
+
+        <button id="btn-browse-export"
+                class="btn btn-ghost btn-icon"
+                title="Choose output location"
+                aria-label="Browse for export output location">
+          <!--
+            Folder icon — two lines representing an open folder.
+          -->
+          <svg viewBox="0 0 14 12"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="1.4"
+               stroke-linecap="round"
+               stroke-linejoin="round"
+               xmlns="http://www.w3.org/2000/svg"
+               aria-hidden="true"
+               focusable="false">
+            <path d="M1 2.5h4l1.5 1.5H13v7H1V2.5Z"/>
+            <path d="M1 4h12"/>
+          </svg>
+        </button>
+      </div>
+
+      <button id="btn-export" class="btn btn-secondary btn-block" style="margin-top:8px;">
+        Export Timeline
+      </button>
+
+    </section>
+
+
+    <!-- ── Status / log ───────────────────────────────────────────────── -->
+    <section class="card card--log" aria-label="Status log">
+
+      <!--
+        #status: single-line status string updated by main.js (legacy).
+        Rendered as the most-recent entry of the visual log.
+        New code should append <li> items to #log directly.
+      -->
+      <p id="status" class="log-status">Initialising…</p>
+
+      <ol class="log" id="log" aria-live="polite" aria-label="Activity log" reversed>
+      </ol>
+
+    </section>
+
+
+    <!--
+      ── Hidden compatibility elements ─────────────────────────────────
+      Fragments required by the current main.js that have no equivalent
+      in the redesigned UI.  Remove once main.js is updated.
+    -->
+    <div id="btn-get-clips"  hidden aria-hidden="true"></div>
+    <div id="clips-table"    hidden aria-hidden="true"></div>
+    <div id="btn-pick-file"  hidden aria-hidden="true"></div>
+
+  </main>
+
+
+  <!-- Application scripts — loaded after the DOM is ready -->
   <script src="js/cepBridge.js"></script>
   <script src="js/audioAnalyser.js"></script>
   <script src="js/main.js"></script>

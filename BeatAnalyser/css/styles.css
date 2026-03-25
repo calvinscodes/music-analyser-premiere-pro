@@ -1,318 +1,643 @@
-/* ------------------------------------------------------------------ */
-/*  BeatAnalyser — Panel UI Styles                                      */
-/*  Dark theme that matches the Adobe Premiere Pro CC UI palette.       */
-/* ------------------------------------------------------------------ */
+/*
+ * styles.css — Beat Analyser CEP Panel
+ *
+ * Design system
+ * ─────────────
+ * Background layers (dark → light):
+ *   --bg-app      #1e1e1e   Overall CEF window / outermost shell
+ *   --bg-card     #282828   Section cards
+ *   --bg-input    #323232   Text inputs, file-path display
+ *   --bg-raised   #3c3c3c   Hover states, inner-raised elements
+ *
+ * Accent: #3d9be9 (Premiere Pro's signature interaction blue)
+ *
+ * Typography: "Adobe Clean" (shipped with Creative Cloud apps) with
+ * system-ui fallbacks.  Panel renders at 12 px base inside CEF.
+ *
+ * Naming convention
+ * ─────────────────
+ * Block       .card, .btn, .log, .metric-*
+ * Modifier    .btn-primary, .btn-ghost, .card--log
+ * State       .has-results, .is-loading, .is-error
+ */
 
-/* ---------- CSS custom properties (matches Premiere dark UI) ------- */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §1  Design tokens
+   ═══════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --bg-primary:    #1e1e1e;
-  --bg-secondary:  #2a2a2a;
-  --bg-elevated:   #333333;
-  --bg-input:      #3a3a3a;
-  --border:        #444444;
-  --border-focus:  #5c8db8;
+  /* Backgrounds */
+  --bg-app:       #1e1e1e;
+  --bg-card:      #282828;
+  --bg-input:     #323232;
+  --bg-raised:    #3c3c3c;
 
-  --text-primary:  #e0e0e0;
-  --text-secondary:#a0a0a0;
-  --text-muted:    #666666;
+  /* Borders */
+  --border:       #383838;
+  --border-mid:   #484848;
+  --border-focus: rgba(61, 155, 233, 0.65);
 
-  --accent:        #5c8db8;   /* Adobe blue */
-  --accent-hover:  #6fa0cc;
-  --accent-active: #4a7aa8;
+  /* Accent — Premiere blue */
+  --accent:        #3d9be9;
+  --accent-hover:  #58adf2;
+  --accent-active: #2d86d4;
+  --accent-muted:  rgba(61, 155, 233, 0.18);
+  --accent-glow:   0 0 0 2px rgba(61, 155, 233, 0.30);
 
-  --success:       #6aaa5e;
-  --warning:       #e0a030;
-  --error:         #c05050;
+  /* Semantic colours */
+  --success:  #5cb85c;
+  --warning:  #d4921a;
+  --error:    #bf5050;
 
-  --font-stack:    "Adobe Clean", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-mono:     "Consolas", "Courier New", monospace;
+  /* Text */
+  --text-primary:   #e6e6e6;
+  --text-secondary: #979797;
+  --text-muted:     #555;
+  --text-placeholder: #5a5a5a;
 
-  --radius:        4px;
-  --transition:    0.15s ease;
+  /* Typography */
+  --font-ui:   "Adobe Clean", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Consolas", "SF Mono", "Cascadia Code", "Courier New", monospace;
+
+  /* Geometry */
+  --radius-sm: 3px;
+  --radius:    4px;
+  --radius-lg: 6px;
+
+  /* Motion */
+  --ease:   0.12s ease;
+  --ease-m: 0.20s ease;
 }
 
-/* ---------- Reset & base ------------------------------------------- */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §2  Reset & base
+   ═══════════════════════════════════════════════════════════════════════ */
+
 *, *::before, *::after {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+  margin:     0;
+  padding:    0;
 }
 
-html, body {
-  width: 100%;
+html {
   height: 100%;
-  overflow-x: hidden;
+  /* CEF renders at device pixels; prevent accidental zoom */
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background-color: var(--bg-primary);
+  height:           100%;
+  background-color: var(--bg-app);
   color:            var(--text-primary);
-  font-family:      var(--font-stack);
+  font-family:      var(--font-ui);
   font-size:        12px;
   line-height:      1.5;
+  /* Prevent text selection — panel UI behaves like a native app */
   user-select:      none;
+  -webkit-user-select: none;
+  /* Prevent rubber-band scroll that looks odd inside a docked CEP panel */
+  overflow:         hidden;
 }
 
-/* ---------- Layout -------------------------------------------------- */
-.panel {
-  display:        flex;
+/* Re-allow text selection inside inputs and outputs */
+input, output, [contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Remove default <ol> list markers; log uses custom bullets */
+ol { list-style: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §3  Scrollbar (WebKit / CEF)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background:    #444;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: #555; }
+::-webkit-scrollbar-corner      { background: transparent; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §4  Layout — header + scrollable body
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.panel-header {
+  display:          flex;
+  align-items:      center;
+  justify-content:  space-between;
+  height:           36px;
+  padding:          0 12px;
+  background-color: #1a1a1a;
+  border-bottom:    1px solid var(--border);
+  /* Header is fixed; body scrolls beneath it */
+  flex-shrink:      0;
+}
+
+.panel-body {
+  display:    flex;
   flex-direction: column;
-  height:         100vh;
-  padding:        12px;
-  gap:            10px;
-  overflow-y:     auto;
+  gap:        8px;
+  padding:    10px 10px 14px;
+  overflow-y: auto;
+  /* Fill remaining height below the fixed header */
+  height:     calc(100vh - 36px);
 }
 
-/* ---------- Section cards ------------------------------------------- */
-.section {
-  background:    var(--bg-secondary);
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §5  Header brand
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.header-brand {
+  display:     flex;
+  align-items: center;
+  gap:         7px;
+  color:       var(--accent);
+}
+
+.header-icon {
+  width:    18px;
+  height:   12px;
+  flex-shrink: 0;
+}
+
+.header-title {
+  font-size:   13px;
+  font-weight: 600;
+  color:       var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.header-host {
+  font-size:  10px;
+  color:      var(--text-muted);
+  font-family: var(--font-mono);
+  /* Hide when empty — JS populates it after init */
+}
+.header-host:empty { display: none; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §6  Cards (section containers)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.card {
+  background:    var(--bg-card);
   border:        1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding:       10px 12px;
 }
 
-.section-title {
-  font-size:     11px;
-  font-weight:   600;
+.card-title {
+  font-size:      10px;
+  font-weight:    600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color:          var(--text-secondary);
+  letter-spacing: 0.08em;
+  color:          var(--text-muted);
   margin-bottom:  8px;
 }
 
-/* ---------- File path display --------------------------------------- */
-.file-path {
-  background:    var(--bg-input);
-  border:        1px solid var(--border);
-  border-radius: var(--radius);
-  padding:       5px 8px;
-  font-size:     11px;
-  font-family:   var(--font-mono);
-  color:         var(--text-secondary);
-  white-space:   nowrap;
-  overflow:      hidden;
-  text-overflow: ellipsis;
-  margin-bottom: 8px;
-  min-height:    26px;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §7  Buttons
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.btn {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             6px;
+  font-family:     var(--font-ui);
+  font-size:       12px;
+  font-weight:     500;
+  line-height:     1;
+  padding:         6px 14px;
+  border-radius:   var(--radius);
+  border:          1px solid transparent;
+  cursor:          pointer;
+  white-space:     nowrap;
+  transition:      background-color var(--ease),
+                   border-color var(--ease),
+                   color var(--ease),
+                   opacity var(--ease);
 }
 
-/* ---------- Buttons ------------------------------------------------- */
-.btn-row {
-  display: flex;
-  gap:     6px;
-  flex-wrap: wrap;
+.btn:focus-visible {
+  outline:        none;
+  box-shadow:     var(--accent-glow);
+  border-color:   var(--border-focus);
 }
 
-button {
-  font-family:   var(--font-stack);
-  font-size:     12px;
-  cursor:        pointer;
-  border:        1px solid var(--border);
-  border-radius: var(--radius);
-  padding:       5px 12px;
-  transition:    background-color var(--transition), border-color var(--transition);
-  white-space:   nowrap;
-}
-
-button:focus-visible {
-  outline:       2px solid var(--border-focus);
-  outline-offset: 2px;
-}
-
-/* Primary (accent) button */
+/* Primary — filled accent */
 .btn-primary {
   background-color: var(--accent);
   border-color:     var(--accent);
   color:            #fff;
 }
-.btn-primary:hover:not(:disabled) {
-  background-color: var(--accent-hover);
-  border-color:     var(--accent-hover);
-}
-.btn-primary:active:not(:disabled) {
-  background-color: var(--accent-active);
-}
+.btn-primary:hover:not(:disabled)  { background-color: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary:active:not(:disabled) { background-color: var(--accent-active); }
 
-/* Secondary (ghost) button */
+/* Secondary — muted filled */
 .btn-secondary {
-  background-color: var(--bg-elevated);
+  background-color: var(--bg-raised);
+  border-color:     var(--border-mid);
   color:            var(--text-primary);
 }
-.btn-secondary:hover:not(:disabled) {
-  background-color: #3d3d3d;
-  border-color:     #555;
-}
-.btn-secondary:active:not(:disabled) {
-  background-color: #292929;
-}
+.btn-secondary:hover:not(:disabled)  { background-color: #444; border-color: #555; }
+.btn-secondary:active:not(:disabled) { background-color: #333; }
 
-/* Danger button */
-.btn-danger {
+/* Ghost — outline only */
+.btn-ghost {
   background-color: transparent;
-  border-color:     var(--error);
-  color:            var(--error);
+  border-color:     var(--border-mid);
+  color:            var(--text-secondary);
 }
-.btn-danger:hover:not(:disabled) {
-  background-color: var(--error);
-  color:            #fff;
-}
+.btn-ghost:hover:not(:disabled)  { background-color: var(--bg-raised); color: var(--text-primary); }
+.btn-ghost:active:not(:disabled) { background-color: var(--bg-input); }
 
-button:disabled {
-  opacity: 0.4;
+/* Disabled state */
+.btn:disabled {
+  opacity: 0.38;
   cursor:  not-allowed;
 }
 
-/* ---------- Status bar ---------------------------------------------- */
-.status {
-  font-size:  11px;
-  color:      var(--text-secondary);
-  min-height: 16px;
-  padding:    2px 0;
-}
-.status.error {
-  color: var(--error);
+/* Full-width block button */
+.btn-block {
+  width: 100%;
 }
 
-/* ---------- Spinner ------------------------------------------------- */
-.spinner {
-  display:          inline-block;
-  width:            12px;
-  height:           12px;
-  border:           2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius:    50%;
-  animation:        spin 0.7s linear infinite;
-  vertical-align:   middle;
-  margin-right:     6px;
+/* Square icon-only button */
+.btn-icon {
+  padding:  6px;
+  width:    28px;
+  flex-shrink: 0;
 }
+.btn-icon svg {
+  width:  14px;
+  height: 12px;
+  display: block;
+}
+
+/* Button group: multiple buttons on one row */
+.btn-group {
+  display: flex;
+  gap:     6px;
+}
+.btn-group .btn-primary {
+  /* Primary button in a group takes remaining width */
+  flex: 1;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §8  Spinner (inline loading indicator)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.btn-spinner {
+  width:            11px;
+  height:           11px;
+  border:           2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius:    50%;
+  animation:        spin 0.65s linear infinite;
+  flex-shrink:      0;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-/* ---------- Results grid -------------------------------------------- */
-.results-grid {
-  display:               grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap:                   8px;
-  margin-top:            4px;
-}
 
-.result-card {
-  background:    var(--bg-elevated);
-  border:        1px solid var(--border);
-  border-radius: var(--radius);
-  padding:       8px 10px;
-  text-align:    center;
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   §9  Clip path display
+   ═══════════════════════════════════════════════════════════════════════ */
 
-.result-card .label {
-  font-size:  10px;
-  color:      var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 3px;
-}
-
-.result-card .value {
-  font-size:   20px;
-  font-weight: 700;
-  color:       var(--text-primary);
-  line-height: 1.2;
-}
-
-.result-card .value.bpm-value {
-  font-size: 28px;
-  color:     var(--accent);
-}
-
-/* Dim results until analysis is done */
-.results-section:not(.has-results) .result-card .value {
-  color: var(--text-muted);
-}
-.results-section:not(.has-results) .result-card .value.bpm-value {
-  color: var(--text-muted);
-}
-
-/* ---------- Clips table --------------------------------------------- */
-.clips-container {
-  max-height: 180px;
-  overflow-y: auto;
-  margin-top: 4px;
-  border:     1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.clips-container table {
-  width:           100%;
-  border-collapse: collapse;
-  font-size:       11px;
-}
-
-.clips-container th {
-  background:    var(--bg-elevated);
-  color:         var(--text-secondary);
-  font-weight:   600;
+.clip-path {
+  margin-top:    7px;
   padding:       5px 8px;
-  text-align:    left;
-  position:      sticky;
-  top:           0;
-  z-index:       1;
-  border-bottom: 1px solid var(--border);
-}
-
-.clips-container td {
-  padding:       4px 8px;
-  border-bottom: 1px solid #2d2d2d;
-  color:         var(--text-primary);
+  background:    var(--bg-input);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family:   var(--font-mono);
+  font-size:     10.5px;
+  color:         var(--text-secondary);
   white-space:   nowrap;
   overflow:      hidden;
   text-overflow: ellipsis;
-  max-width:     120px;
+  min-height:    26px;
+  line-height:   16px;
 }
 
-.clips-container tr:last-child td {
-  border-bottom: none;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §10  Results card
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── BPM hero display ──────────────────────────────────────────────── */
+
+.bpm-display {
+  display:     flex;
+  flex-direction: column;
+  align-items: center;
+  padding:     16px 0 12px;
 }
 
-.clips-container tr:hover td {
-  background-color: #2e2e2e;
+.bpm-number {
+  display:         block;
+  font-size:       52px;
+  font-weight:     700;
+  line-height:     1;
+  letter-spacing:  -1px;
+  font-variant-numeric: tabular-nums;
+  color:           var(--accent);
+  transition:      color var(--ease-m);
 }
 
-.empty {
-  color:   var(--text-muted);
-  padding: 12px;
+.bpm-label {
+  display:         block;
+  margin-top:      5px;
+  font-size:       10px;
+  font-weight:     600;
+  text-transform:  uppercase;
+  letter-spacing:  0.16em;
+  color:           var(--text-muted);
+}
+
+/* Dim the BPM until analysis is complete */
+.results-card:not(.has-results) .bpm-number {
+  color: var(--text-muted);
+}
+
+/* ── Divider ──────────────────────────────────────────────────────── */
+
+.results-divider {
+  height:     1px;
+  background: var(--border);
+  margin:     2px -12px 10px;  /* bleed to card edges */
+}
+
+/* ── Key row ──────────────────────────────────────────────────────── */
+
+.key-row {
+  display:     flex;
+  align-items: baseline;
+  gap:         10px;
+  margin-bottom: 8px;
+}
+
+.key-label {
+  font-size:      10px;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color:          var(--text-muted);
+  width:          54px;          /* aligns with .strength-label */
+  flex-shrink:    0;
+}
+
+.key-name {
+  font-size:   20px;
+  font-weight: 600;
+  color:       var(--text-primary);
+  line-height: 1;
+  transition:  color var(--ease-m);
+}
+
+.results-card:not(.has-results) .key-name {
+  color: var(--text-muted);
+}
+
+/* ── Key strength bar ─────────────────────────────────────────────── */
+
+.strength-row {
+  display:     flex;
+  align-items: center;
+  gap:         0;
+  margin-bottom: 10px;
+}
+
+.strength-label {
+  font-size:      10px;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color:          var(--text-muted);
+  width:          54px;
+  flex-shrink:    0;
+  margin-right:   10px;
+}
+
+.strength-track {
+  flex:          1;
+  height:        5px;
+  background:    var(--bg-raised);
+  border-radius: 3px;
+  overflow:      hidden;
+  border:        1px solid var(--border);
+}
+
+.strength-fill {
+  height:        100%;
+  width:         0%;
+  background:    var(--accent);
+  border-radius: 2px;
+  /*
+   * Animate width when JS sets it via style.width.
+   * A 400 ms ease-out feels snappy but not jarring.
+   */
+  transition:    width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),
+                 background-color var(--ease);
+}
+
+/*
+ * Colour the bar green when strength ≥ 0.75 (high confidence).
+ * JS should toggle .is-strong on .results-card; the rule targets
+ * the fill directly so the transition still fires.
+ */
+.results-card.is-strong .strength-fill {
+  background: var(--success);
+}
+
+.results-card:not(.has-results) .strength-fill {
+  background: var(--bg-raised);
+}
+
+.strength-value {
+  font-size:     11px;
+  font-family:   var(--font-mono);
+  color:         var(--text-secondary);
+  width:         32px;
+  text-align:    right;
+  flex-shrink:   0;
+  margin-left:   8px;
+  transition:    color var(--ease-m);
+}
+
+.results-card:not(.has-results) .strength-value {
+  color: var(--text-muted);
+}
+
+/* ── Beat count ───────────────────────────────────────────────────── */
+
+.beat-count {
+  font-size:  11px;
+  color:      var(--text-secondary);
   text-align: center;
-  font-style: italic;
+  padding-top: 2px;
+  transition: color var(--ease-m);
 }
 
-/* ---------- Drag-and-drop overlay ----------------------------------- */
+.results-card:not(.has-results) .beat-count {
+  color: var(--text-muted);
+}
+
+/* ── Loading skeleton pulse ───────────────────────────────────────── */
+/*
+ * When main.js adds .is-loading (during analysis), the results area
+ * pulses subtly to signal work is in progress.
+ */
+.results-card.is-loading .bpm-number,
+.results-card.is-loading .key-name,
+.results-card.is-loading .beat-count {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1;    }
+  50%       { opacity: 0.35; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §11  Export — path input row
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.path-row {
+  display:   flex;
+  gap:       4px;
+  align-items: center;
+}
+
+.path-input {
+  flex:          1;
+  min-width:     0;          /* allow flex shrink below intrinsic width */
+  font-family:   var(--font-mono);
+  font-size:     11px;
+  color:         var(--text-primary);
+  background:    var(--bg-input);
+  border:        1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  padding:       5px 8px;
+  height:        28px;
+  outline:       none;
+  transition:    border-color var(--ease), box-shadow var(--ease);
+}
+
+.path-input::placeholder {
+  color: var(--text-placeholder);
+}
+
+.path-input:hover {
+  border-color: var(--border-focus);
+}
+
+.path-input:focus {
+  border-color: var(--border-focus);
+  box-shadow:   var(--accent-glow);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §12  Status / log
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Single-line status string (main.js legacy) */
+.log-status {
+  font-size:    11px;
+  color:        var(--text-secondary);
+  min-height:   15px;
+  margin-bottom: 6px;
+  transition:   color var(--ease);
+}
+.log-status.error { color: var(--error); }
+
+/* Scrollable log list */
+.log {
+  display:        flex;
+  flex-direction: column;
+  gap:            3px;
+  max-height:     80px;
+  overflow-y:     auto;
+  /*
+   * Use padding instead of gap on the container so the scrollbar
+   * doesn't clip the last entry's bottom padding.
+   */
+  padding-bottom: 2px;
+}
+
+/* Individual log entry */
+.log-entry {
+  display:     flex;
+  align-items: flex-start;
+  gap:         6px;
+  font-size:   11px;
+  font-family: var(--font-mono);
+  line-height: 1.45;
+  color:       var(--text-secondary);
+}
+
+/* Bullet — coloured by entry type */
+.log-entry::before {
+  content:     "•";
+  flex-shrink: 0;
+  margin-top:  1px;
+  color:       var(--text-muted);
+}
+
+.log-entry--info::before    { color: var(--accent);   }
+.log-entry--success::before { color: var(--success);  }
+.log-entry--warn::before    { color: var(--warning);  }
+.log-entry--error::before   { color: var(--error);    }
+
+.log-entry--error   { color: #d87070; }
+.log-entry--success { color: #8ecf8e; }
+
+/* Card modifier for the log section — tighter padding */
+.card--log {
+  padding-top:    9px;
+  padding-bottom: 9px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §13  Drag-and-drop overlay
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/*
+ * main.js adds .drag-over to <body> on dragover and removes it on dragleave/drop.
+ * The ::after pseudo-element renders a full-panel overlay.
+ */
 body.drag-over::after {
-  content:         "Drop audio file here";
+  content:         "Drop audio file";
   position:        fixed;
   inset:           0;
-  background:      rgba(92, 141, 184, 0.18);
-  border:          2px dashed var(--accent);
-  border-radius:   var(--radius);
   display:         flex;
   align-items:     center;
   justify-content: center;
-  font-size:       16px;
+  font-size:       15px;
+  font-weight:     500;
   color:           var(--accent);
+  background:      rgba(30, 30, 30, 0.85);
+  border:          2px dashed var(--accent);
+  border-radius:   var(--radius);
   pointer-events:  none;
-  z-index:         100;
-}
-
-/* ---------- Scrollbar styling (WebKit / CEF) ------------------------ */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg-primary);
-}
-::-webkit-scrollbar-thumb {
-  background:    var(--bg-elevated);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4a4a4a;
+  z-index:         999;
+  backdrop-filter: blur(2px);
 }
