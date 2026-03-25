@@ -374,27 +374,80 @@
   }
 
   /**
-   * Runs aubio's Tempo tracker over mono PCM data using the "default" method.
+   * Synchronous inner loop for aubio Tempo tracking.
+   * Extracted from runAubioTempo so the retry path can reuse the same loop
+   * without re-loading the WASM module (which is a singleton singleton).
    *
-   * aubio Tempo internals
-   * ---------------------
-   * The Tempo object implements a phase-vocoder-based beat tracker using the
-   * "default" onset detection function (a combination of energy-based and
-   * spectral-flux detection).  Each call to tempo.do(frame) feeds a hopSize-
-   * length window of samples.  The tracker accumulates phase information
-   * across calls — hence the sequential loop; frames cannot be parallelised.
+   * aubio Tempo constructor forms
+   * ------------------------------
+   * 3-arg: Tempo(bufferSize, hopSize, sampleRate)          — default onset method
+   * 4-arg: Tempo(method, bufferSize, hopSize, sampleRate)  — explicit onset method
    *
-   * Beat timestamp derivation
-   * -------------------------
-   * tempo.getLastMs() returns the position of the detected beat *within the
-   * current frame* in milliseconds from the start of the audio.  This is
-   * more accurate than computing the beat time from the frame index alone
-   * because aubio interpolates the exact onset position within the hop window
-   * using phase information.
+   * Known onset method names (passed as the 4-arg first parameter):
+   *   "default"  — energy + spectral flux combined (default)
+   *   "hfc"      — high-frequency content
+   *   "complex"  — complex-domain onset
+   *   "phase"    — phase deviation
+   *   "specdiff" — spectral difference
+   *   "kl"       — Kullback-Leibler divergence
+   *   "mkl"      — modified KL
+   *   "specflux" — spectral flux
+   *   "yinfft"   — YIN pitch estimator adapted for onset detection;
+   *                works well on material where energy/flux methods miss
+   *                onsets (e.g. sustained tones, heavy reverb, low-tempo material)
    *
-   * Beat position formula (frame-index-only fallback):
-   *   beatTime = (frameIndex * hopSize) / sampleRate
-   * But getLastMs() / 1000 is always preferred as it sub-frame-accurate.
+   * @param  {AubioModule} aubioModule  Resolved WASM module from loadAubioModule().
+   * @param  {Float32Array} pcm         Mono samples at ANALYSIS_SAMPLE_RATE.
+   * @param  {number}       sampleRate  Must equal ANALYSIS_SAMPLE_RATE.
+   * @param  {string|null}  method      Onset method name, or null for default.
+   * @returns {{ bpm: number, beatTimestamps: Float32Array }}
+   * @throws  {InsufficientBeatsError}  propagated from deriveBpm when < MIN_BEATS_FOR_BPM.
+   */
+  function _runTempoLoop(aubioModule, pcm, sampleRate, method) {
+    var tempo = method
+      ? new aubioModule.Tempo(method, AUBIO_BUFFER_SIZE, AUBIO_HOP_SIZE, sampleRate)
+      : new aubioModule.Tempo(AUBIO_BUFFER_SIZE, AUBIO_HOP_SIZE, sampleRate);
+
+    var beatTimesMs = [];
+    var numFrames   = Math.floor(pcm.length / AUBIO_HOP_SIZE);
+
+    for (var i = 0; i < numFrames; i++) {
+      var frameStart = i * AUBIO_HOP_SIZE;
+      var frame      = pcm.slice(frameStart, frameStart + AUBIO_HOP_SIZE);
+
+      tempo.do(frame);
+
+      if (tempo.getBeat()) {
+        // getLastMs() returns the beat position in ms from the stream start
+        // (not relative to the current frame) — sub-frame accurate.
+        beatTimesMs.push(tempo.getLastMs());
+      }
+    }
+
+    // deriveBpm throws InsufficientBeatsError when < MIN_BEATS_FOR_BPM beats.
+    var bpm = deriveBpm(beatTimesMs, sampleRate);
+
+    tempo.free();
+
+    var beatTimestamps = new Float32Array(beatTimesMs.length);
+    for (var j = 0; j < beatTimesMs.length; j++) {
+      beatTimestamps[j] = beatTimesMs[j] / 1000;
+    }
+
+    return { bpm: bpm, beatTimestamps: beatTimestamps };
+  }
+
+  /**
+   * Runs aubio's Tempo tracker over mono PCM data.
+   *
+   * Primary onset method: "default" (energy + spectral flux).
+   * Fallback onset method: "yinfft" — used automatically if the primary
+   * method returns 0 or NaN BPM, or throws InsufficientBeatsError.
+   *
+   * The yinfft method uses YIN pitch-based onset detection and is more
+   * sensitive to material where energy/flux onsets are weak or ambiguous
+   * (e.g. heavily reverberant recordings, sustained-tone music, very
+   * slow tempos, or acoustic material with smooth attack envelopes).
    *
    * @param  {Float32Array} pcm         Mono at ANALYSIS_SAMPLE_RATE.
    * @param  {number}       sampleRate  Must equal ANALYSIS_SAMPLE_RATE.
@@ -402,54 +455,44 @@
    */
   function runAubioTempo(pcm, sampleRate) {
     return loadAubioModule().then(function (aubioModule) {
-      var tempo = new aubioModule.Tempo(
-        AUBIO_BUFFER_SIZE,
-        AUBIO_HOP_SIZE,
-        sampleRate
-      );
+      var result;
 
-      var beatTimesMs = [];   // beat positions in milliseconds (from aubio)
-      var numFrames   = Math.floor(pcm.length / AUBIO_HOP_SIZE);
+      try {
+        result = _runTempoLoop(aubioModule, pcm, sampleRate, null);
 
-      /*
-       * Pre-allocate a reusable hop-sized Float32Array to avoid creating
-       * a new typed array on every iteration.  pcm.subarray() returns a
-       * view (no copy), but aubio.js's WASM binding may require a copy
-       * depending on whether it accepts non-WASM-heap buffers.
-       * Using slice() here for maximum compatibility.
-       */
-      for (var i = 0; i < numFrames; i++) {
-        var frameStart = i * AUBIO_HOP_SIZE;
-        var frame      = pcm.slice(frameStart, frameStart + AUBIO_HOP_SIZE);
-
-        tempo.do(frame);
-
-        if (tempo.getBeat()) {
-          /*
-           * getLastMs() returns the beat position in ms from the start of
-           * the stream, not relative to the current frame.  It is the most
-           * accurate timestamp aubio can provide.
-           */
-          beatTimesMs.push(tempo.getLastMs());
+        // Guard against degenerate BPM values that can occur when the median
+        // IBI calculation produces Infinity or NaN (e.g. all beats at t=0).
+        if (!result.bpm || isNaN(result.bpm) || result.bpm === 0) {
+          throw new Error(
+            "Default onset method returned degenerate BPM: " + result.bpm
+          );
         }
+
+        return result;
+
+      } catch (defaultErr) {
+        // Log the failure and attempt the yinfft retry.
+        console.warn(
+          "[audioAnalyser] Default onset method failed: " + defaultErr.message +
+          " — retrying with yinfft onset detection…"
+        );
+
+        // _runTempoLoop with "yinfft" may itself throw InsufficientBeatsError;
+        // if so, that error propagates naturally as the final rejection.
+        var retry = _runTempoLoop(aubioModule, pcm, sampleRate, "yinfft");
+
+        if (!retry.bpm || isNaN(retry.bpm) || retry.bpm === 0) {
+          // Both methods produced degenerate BPM — give up with a clear message.
+          throw new InsufficientBeatsError(
+            "Both default and yinfft onset methods failed to detect a stable tempo. " +
+            "The clip may have no clear rhythmic pulse, or may be too short for " +
+            "reliable beat tracking at bufferSize=" + AUBIO_BUFFER_SIZE +
+            ", hopSize=" + AUBIO_HOP_SIZE + "."
+          );
+        }
+
+        return retry;
       }
-
-      /*
-       * Compute stable BPM from collected beat timestamps.
-       * This is deferred to deriveBpm() which uses inter-beat intervals
-       * rather than aubio's running getBpm() average (see §6 for rationale).
-       */
-      var bpm = deriveBpm(beatTimesMs, sampleRate);
-
-      tempo.free();  // release WASM heap allocation
-
-      // Convert ms array → Float32Array of seconds for the public API.
-      var beatTimestamps = new Float32Array(beatTimesMs.length);
-      for (var j = 0; j < beatTimesMs.length; j++) {
-        beatTimestamps[j] = beatTimesMs[j] / 1000;
-      }
-
-      return { bpm: bpm, beatTimestamps: beatTimestamps };
     });
   }
 

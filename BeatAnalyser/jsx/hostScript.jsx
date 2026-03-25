@@ -70,6 +70,74 @@ function _err(message) {
 }
 
 /**
+ * Returns true when the file extension indicates a container format that
+ * carries video (and thus may or may not carry an audio stream separately).
+ *
+ * Used by getActiveSequenceAudioPath() to annotate results so the panel
+ * can warn the user that the Web Audio API will extract audio on-the-fly
+ * from the video container.
+ *
+ * @param  {string} filePath
+ * @returns {boolean}
+ */
+function _isVideoExtension(filePath) {
+  if (!filePath) return false;
+  return /\.(mp4|m4v|mov|mxf|avi|mkv|r3d|braw|mts|m2ts|ts|wmv|dv|f4v|flv|3gp)$/i
+    .test(filePath);
+}
+
+/**
+ * Searches the sequence's audio tracks for a clip whose projectItem is the
+ * same object as videoClipProjectItem (Premiere links A/V track items by
+ * sharing a single ProjectItem reference).
+ *
+ * Called when the best candidate clip comes from a video track, so we can
+ * return the audio-track component (same file, same in/out points) instead.
+ * This ensures the Web Audio API receives a path that is unambiguously an
+ * audio-bearing media item rather than a generic video container.
+ *
+ * @param  {Sequence}    seq
+ * @param  {ProjectItem} videoClipProjectItem  Reference to match against.
+ * @returns {Object|null}  scanTracks-shaped payload, or null if not found.
+ */
+function _findLinkedAudioComponent(seq, videoClipProjectItem) {
+  for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+    var track = seq.audioTracks[t];
+    if (!track.clips || track.clips.numItems === 0) continue;
+
+    for (var c = 0; c < track.clips.numItems; c++) {
+      var clip = track.clips[c];
+      if (!clip.projectItem) continue;
+
+      // Linked A/V clips in Premiere share the same ProjectItem instance.
+      if (clip.projectItem === videoClipProjectItem) {
+        var filePath = "";
+        try {
+          filePath = clip.projectItem.getMediaPath();
+        } catch (e) {
+          continue;
+        }
+        if (!filePath || filePath === "(unavailable)") continue;
+
+        return {
+          filePath:       filePath,
+          clipName:       clip.name,
+          trackType:      "audio",   // audio-track component, even though source is A/V
+          trackIndex:     t,
+          clipIndex:      c,
+          startSeconds:   clip.start.seconds,
+          inSeconds:      clip.inPoint.seconds,
+          outSeconds:     clip.outPoint.seconds,
+          isVideoFile:    _isVideoExtension(filePath),  // true for .mp4/.mov/etc.
+          linkedFromVideo: true   // flags that we resolved this via the video clip link
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Returns app.project, throwing a descriptive error when no project is open.
  * @throws {Error}
  */
@@ -136,9 +204,23 @@ function _secondsToTicks(seconds) {
  * @returns {string} JSON envelope
  */
 function getActiveSequenceAudioPath() {
-  try {
-    var seq = _requireActiveSequence();
+  // ── Explicit upfront guards (return JSON error objects, not exceptions) ──
+  //
+  // Returning _err() here rather than relying on _requireActiveSequence() to
+  // throw makes it explicit that "no sequence" is an expected, non-fatal
+  // condition that the panel should present as a clear user message.
+  if (!app.project) {
+    return _err("No project is currently open.");
+  }
+  var seq = app.project.activeSequence;
+  if (!seq) {
+    return _err(
+      "No active sequence. Click a sequence tab in the timeline panel " +
+      "to make it active, then try again."
+    );
+  }
 
+  try {
     /**
      * Inner scan — walks one TrackCollection looking for the first clip
      * whose projectItem exposes a non-empty media path.
@@ -179,17 +261,42 @@ function getActiveSequenceAudioPath() {
             clipIndex:    c,
             startSeconds: clip.start.seconds,
             inSeconds:    clip.inPoint.seconds,
-            outSeconds:   clip.outPoint.seconds
+            outSeconds:   clip.outPoint.seconds,
+            isVideoFile:  _isVideoExtension(filePath)
           };
         }
       }
       return null;
     }
 
-    // Prefer a dedicated audio track clip; fall back to a video track clip
-    // (which may be an A/V file the panel can still decode for audio content).
-    var result = scanTracks(seq.audioTracks, "audio")
-              || scanTracks(seq.videoTracks, "video");
+    // Prefer a dedicated audio track clip.
+    var result = scanTracks(seq.audioTracks, "audio");
+
+    if (!result) {
+      // Fall back to a video track clip.
+      // For A/V files on video tracks, attempt to resolve the linked audio
+      // component on the audio tracks first — it carries the same source
+      // file but its track type is "audio", which makes the clip origin
+      // clearer to the panel.
+      var videoResult = scanTracks(seq.videoTracks, "video");
+
+      if (videoResult) {
+        // Try to locate the audio-track component that is linked to this
+        // video clip (they share the same ProjectItem reference in Premiere).
+        var linkedAudio = _findLinkedAudioComponent(seq, videoResult.clip
+          ? videoResult.clip.projectItem  // would be set if we stored the ref
+          : null);
+        // Note: scanTracks doesn't return the clip object, only derived fields.
+        // Re-find the clip projectItem for the linked-audio search.
+        var vTrack = seq.videoTracks[videoResult.trackIndex];
+        var vClip  = vTrack && vTrack.clips ? vTrack.clips[videoResult.clipIndex] : null;
+        if (vClip && vClip.projectItem) {
+          linkedAudio = _findLinkedAudioComponent(seq, vClip.projectItem);
+        }
+
+        result = linkedAudio || videoResult;
+      }
+    }
 
     if (!result) {
       return _err(

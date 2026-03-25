@@ -47,6 +47,14 @@
    */
   var STRONG_KEY_THRESHOLD = 0.75;
 
+  /**
+   * Premiere Pro allows at most 999 markers per sequence.
+   * Attempting to place more will silently drop the excess or produce
+   * confusing behaviour in older builds.  When beat count exceeds this
+   * threshold we prompt the user to choose a placement stride.
+   */
+  var PREMIERE_MARKER_LIMIT = 999;
+
   /* ═══════════════════════════════════════════════════════════════════ */
   /*  §2  DOM cache                                                      */
   /* ═══════════════════════════════════════════════════════════════════ */
@@ -108,7 +116,16 @@
     beatTimestamps: null,
 
     /** Full result object returned by analyseAudio(). */
-    lastResult:     null
+    lastResult:     null,
+
+    /**
+     * Stride for marker placement when beat count exceeds PREMIERE_MARKER_LIMIT.
+     *   1 = every beat  (default)
+     *   2 = every 2nd beat
+     *   4 = every 4th beat
+     * Reset to 1 on clearResults() so a fresh analysis always starts unstrided.
+     */
+    markerStride:   1
   };
 
   /* ═══════════════════════════════════════════════════════════════════ */
@@ -235,6 +252,7 @@
 
     state.beatTimestamps = null;
     state.lastResult     = null;
+    state.markerStride   = 1;
   }
 
   /**
@@ -385,7 +403,7 @@
 
     var pathResult = await cepBridge.getAudioFilePath();
 
-    // pathResult: { filePath, clipName, trackType, trackIndex, … }
+    // pathResult: { filePath, clipName, trackType, trackIndex, isVideoFile, … }
     var filePath = pathResult.filePath;
     var label    = pathResult.clipName +
                    " (" + (pathResult.trackType === "audio" ? "A" : "V") +
@@ -394,6 +412,20 @@
     dom.filePathDisplay.textContent = label;
     dom.filePathDisplay.title       = filePath;
     state.filePath                  = filePath;
+
+    if (pathResult.isVideoFile) {
+      appendLog(
+        "Source is a video file — audio will be extracted by the Web Audio decoder. " +
+        "For best results use a lossless or high-bitrate audio-only clip.",
+        "warn"
+      );
+    }
+    if (pathResult.linkedFromVideo) {
+      appendLog(
+        "Using linked audio component (A" + (pathResult.trackIndex + 1) + ") " +
+        "from the video clip on V" + (pathResult.trackIndex + 1) + "."
+      );
+    }
 
     return filePath;
   }
@@ -467,9 +499,75 @@
       "success"
     );
 
+    // Warn when beat count exceeds Premiere Pro's per-sequence marker limit.
+    // The user will be prompted to choose a stride in onPlaceMarkers().
+    if (result.beatTimestamps.length > PREMIERE_MARKER_LIMIT) {
+      appendLog(
+        result.beatTimestamps.length + " beats detected — Premiere Pro supports " +
+        "up to " + PREMIERE_MARKER_LIMIT + " markers per sequence. " +
+        "You will be prompted to choose a stride when placing markers.",
+        "warn"
+      );
+    }
+
     // §6f  Enable Place Beat Markers
     dom.addMarkersBtn.disabled = false;
     dom.addMarkersBtn.setAttribute("aria-disabled", "false");
+  }
+
+  /**
+   * Appends an inline stride-chooser to the log when beat count exceeds the
+   * Premiere Pro marker limit.
+   *
+   * Creates three buttons ("Every beat / Every 2nd / Every 4th") as children
+   * of a log entry.  Clicking a button stores the chosen stride in `state`
+   * and calls onPlaceMarkers() to resume the placement flow.
+   *
+   * Uses inline styles on the buttons so no CSS class changes are needed.
+   *
+   * @param {number} beatCount  Total number of detected beats.
+   */
+  function showStrideChooser(beatCount) {
+    var li = document.createElement("li");
+    li.className = "log-entry log-entry--warn";
+
+    var label = document.createElement("span");
+    label.textContent = "Place markers on: ";
+    li.appendChild(label);
+
+    var options = [
+      { label: "Every beat",    stride: 1 },
+      { label: "Every 2nd",     stride: 2 },
+      { label: "Every 4th",     stride: 4 }
+    ];
+
+    options.forEach(function (opt) {
+      var count = Math.ceil(beatCount / opt.stride);
+      var btn   = document.createElement("button");
+      btn.textContent = opt.label + " (" + count + ")";
+      btn.style.cssText =
+        "margin-left:6px; padding:2px 7px; font-size:11px;" +
+        "cursor:pointer; background:var(--bg-raised,#3c3c3c);" +
+        "color:var(--text-primary,#e0e0e0); border:1px solid var(--border,#4a4a4a);" +
+        "border-radius:3px;";
+
+      btn.addEventListener("click", function () {
+        state.markerStride = opt.stride;
+        // Remove the chooser row so the log doesn't accumulate on re-click.
+        if (li.parentNode) li.parentNode.removeChild(li);
+        appendLog(
+          "Stride: " + opt.label + " — " + count + " marker" +
+          (count !== 1 ? "s" : "") + " will be placed.",
+          "info"
+        );
+        onPlaceMarkers();
+      });
+
+      li.appendChild(btn);
+    });
+
+    dom.log.appendChild(li);
+    dom.log.scrollTop = dom.log.scrollHeight;
   }
 
   /* ── Primary button handler ─────────────────────────────────────── */
@@ -539,6 +637,32 @@
       return;
     }
 
+    var beatCount = state.beatTimestamps.length;
+
+    // If beat count exceeds Premiere's marker limit and the user hasn't yet
+    // chosen a stride, pause and present the stride chooser.
+    if (beatCount > PREMIERE_MARKER_LIMIT && state.markerStride === 1) {
+      appendLog(
+        beatCount + " beats exceeds Premiere Pro's " + PREMIERE_MARKER_LIMIT +
+        "-marker limit. Choose a placement stride below:",
+        "warn"
+      );
+      showStrideChooser(beatCount);
+      return;
+    }
+
+    // Apply stride: keep only every Nth beat.
+    var timestamps;
+    if (state.markerStride > 1) {
+      var strided = [];
+      for (var si = 0; si < beatCount; si += state.markerStride) {
+        strided.push(state.beatTimestamps[si]);
+      }
+      timestamps = new Float32Array(strided);
+    } else {
+      timestamps = state.beatTimestamps;
+    }
+
     // Step 1 — derive frame rate from sequence metadata.
     var frameRate = 0;
     try {
@@ -547,7 +671,7 @@
       if (seqInfo && seqInfo.timebase) {
         frameRate = ticksToFps(seqInfo.timebase);
         appendLog(
-          "Sequence: "" + seqInfo.name + ""  " + frameRate + " fps  " +
+          "Sequence: \u201c" + seqInfo.name + "\u201d  " + frameRate + " fps  " +
           seqInfo.duration.toFixed(2) + "s"
         );
       }
@@ -561,15 +685,14 @@
 
     // Step 2 — write markers.
     appendLog(
-      "Placing " + state.beatTimestamps.length + " marker" +
-      (state.beatTimestamps.length !== 1 ? "s" : "") + "…"
+      "Placing " + timestamps.length + " marker" +
+      (timestamps.length !== 1 ? "s" : "") +
+      (state.markerStride > 1 ? " (every " + state.markerStride + " beats)" : "") +
+      "…"
     );
 
     try {
-      var result = await cepBridge.sendMarkersToTimeline(
-        state.beatTimestamps,
-        frameRate
-      );
+      var result = await cepBridge.sendMarkersToTimeline(timestamps, frameRate);
 
       var msg = "Placed " + result.placed +
                 " beat marker" + (result.placed !== 1 ? "s" : "");
@@ -611,11 +734,31 @@
    * "Export Timeline" click handler.
    * Validates the output path field then calls cepBridge.exportTimeline().
    */
+  /**
+   * Valid container extensions accepted by Adobe Media Encoder when exporting
+   * a sequence.  MXF covers both OP1a (audio+video) and D-10 variants.
+   * The check is case-insensitive to handle .MP4 / .MOV etc. from Windows paths.
+   */
+  var VALID_EXPORT_EXT = /\.(mp4|mov|mxf)$/i;
+
   async function onExport() {
     var outputPath = dom.exportPath.value.trim();
 
     if (!outputPath) {
       appendLog("Enter an output file path before exporting.", "error");
+      dom.exportPath.focus();
+      return;
+    }
+
+    if (!VALID_EXPORT_EXT.test(outputPath)) {
+      var ext = outputPath.lastIndexOf(".") !== -1
+        ? outputPath.slice(outputPath.lastIndexOf("."))
+        : "(no extension)";
+      appendLog(
+        "Export path must end in .mp4, .mov, or .mxf — got: " + ext + ". " +
+        "Update the path or use the \u2026 browse button to choose a destination.",
+        "error"
+      );
       dom.exportPath.focus();
       return;
     }
