@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<ExtensionManifest Version="7.0"
+  ExtensionBundleId="com.beatanalyser.panel"
+  ExtensionBundleVersion="1.0.0"
+  ExtensionBundleName="BeatAnalyser"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <ExtensionList>
+    <Extension Id="com.beatanalyser.panel" Version="1.0.0" />
+  </ExtensionList>
+
+  <ExecutionEnvironment>
+    <HostList>
+      <!-- Premiere Pro CC 2019 = version 13.0 -->
+      <Host Name="PPRO" Version="[13.0,99.9]" />
+    </HostList>
+
+    <LocaleList>
+      <Locale Code="All" />
+    </LocaleList>
+
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="7.0" />
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+
+  <DispatchInfoList>
+    <Extension Id="com.beatanalyser.panel">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/hostScript.jsx</ScriptPath>
+          <CEFCommandLine>
+            <!-- Enable SharedArrayBuffer + WASM threads required by aubio/essentia -->
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+
+        <UI>
+          <Type>Panel</Type>
+          <Menu>BeatAnalyser</Menu>
+          <Geometry>
+            <Size>
+              <Height>580</Height>
+              <Width>360</Width>
+            </Size>
+            <MinSize>
+              <Height>400</Height>
+              <Width>300</Width>
+            </MinSize>
+          </Geometry>
+          <Icons>
+            <!-- Place panel icons at these paths if desired -->
+            <!-- <Icon Type="Normal">./img/icon_normal.png</Icon> -->
+          </Icons>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+
+</ExtensionManifest>

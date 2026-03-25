@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BeatAnalyser</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!--
+    CSInterface — Adobe CEP host communication SDK.
+    Ship the real CSInterface.js from the CEP SDK alongside the extension.
+    The path below assumes it lives at the extension root.
+    Download from: https://github.com/Adobe-CEP/CSInterface
+  -->
+  <script src="CSInterface.js"></script>
+
+  <!--
+    WASM bundles — aubio.js and essentia.js are large (~2–8 MB each).
+    They are NOT bundled in this repository. Obtain them separately:
+
+      aubio.js:
+        npm install aubiojs            (provides dist/aubio.js)
+        – or –
+        https://github.com/qiuxiang/aubiojs/releases
+
+      essentia.js:
+        npm install essentia.js        (provides dist/essentia.js)
+        – or –
+        https://github.com/MTG/essentia.js/releases
+
+    Copy the built files into the lib/ directory.
+  -->
+  <script src="lib/aubio.js"></script>
+  <script src="lib/essentia.js"></script>
+</head>
+<body>
+
+  <div class="panel">
+
+    <!-- ── Header ──────────────────────────────────────────────────── -->
+    <div class="section">
+      <div class="section-title">BeatAnalyser</div>
+      <div id="status" class="status">Initialising…</div>
+    </div>
+
+    <!-- ── File loader ──────────────────────────────────────────────── -->
+    <div class="section">
+      <div class="section-title">Audio File</div>
+      <div id="file-path" class="file-path">No file selected</div>
+      <div class="btn-row">
+        <button id="btn-pick-file" class="btn-secondary">Browse…</button>
+        <button id="btn-analyse"   class="btn-primary">Analyse</button>
+        <span id="spinner" class="spinner" style="display:none;"></span>
+      </div>
+    </div>
+
+    <!-- ── Results ──────────────────────────────────────────────────── -->
+    <div class="section results-section" id="results-section">
+      <div class="section-title">Analysis Results</div>
+      <div class="results-grid">
+
+        <div class="result-card">
+          <div class="label">BPM</div>
+          <div class="value bpm-value" id="bpm-value">—</div>
+        </div>
+
+        <div class="result-card">
+          <div class="label">Confidence</div>
+          <div class="value" id="confidence-value">—</div>
+        </div>
+
+        <div class="result-card">
+          <div class="label">Key</div>
+          <div class="value" id="key-value">—</div>
+        </div>
+
+        <div class="result-card">
+          <div class="label">Scale</div>
+          <div class="value" id="scale-value">—</div>
+        </div>
+
+        <div class="result-card">
+          <div class="label">Beats Detected</div>
+          <div class="value" id="beat-count">—</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Timeline markers ─────────────────────────────────────────── -->
+    <div class="section">
+      <div class="section-title">Timeline Markers</div>
+      <div class="btn-row">
+        <button id="btn-add-markers"   class="btn-primary">Add Beat Markers</button>
+        <button id="btn-clear-markers" class="btn-danger">Clear Markers</button>
+      </div>
+    </div>
+
+    <!-- ── Sequence clips ───────────────────────────────────────────── -->
+    <div class="section">
+      <div class="section-title">Sequence Audio Clips</div>
+      <div class="btn-row" style="margin-bottom:8px;">
+        <button id="btn-get-clips" class="btn-secondary">Refresh Clips</button>
+      </div>
+      <div class="clips-container">
+        <div id="clips-table">
+          <p class="empty">Click "Refresh Clips" to list clips from the active sequence.</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.panel -->
+
+  <!-- Application scripts (load after DOM) -->
+  <script src="js/cepBridge.js"></script>
+  <script src="js/audioAnalyser.js"></script>
+  <script src="js/main.js"></script>
+
+</body>
+</html>

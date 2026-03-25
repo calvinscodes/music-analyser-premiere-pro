@@ -1,0 +1,40 @@
+{
+  "name": "beat-analyser",
+  "version": "1.0.0",
+  "description": "BeatAnalyser — Adobe Premiere Pro CEP panel for BPM and musical key detection",
+  "private": true,
+  "scripts": {
+    "postinstall": "node scripts/copyWasm.js",
+    "dev": "node scripts/symlinkExtension.js",
+    "lint": "eslint js/**/*.js",
+    "validate-manifest": "node scripts/validateManifest.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "dependencies": {
+    "aubiojs": "^0.1.3",
+    "essentia.js": "^0.1.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "cep": {
+    "extensionId": "com.beatanalyser.panel",
+    "hostApp": "PPRO",
+    "minHostVersion": "13.0",
+    "panelWidth": 360,
+    "panelHeight": 580
+  },
+  "keywords": [
+    "adobe-premiere",
+    "cep",
+    "beat-detection",
+    "bpm",
+    "key-detection",
+    "aubio",
+    "essentia",
+    "wasm"
+  ],
+  "license": "MIT"
+}
