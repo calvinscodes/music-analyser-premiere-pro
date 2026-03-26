@@ -921,6 +921,12 @@
    * Falls back to the in-process path if Workers are unavailable.
    */
   function computeChromaAndKey(pcm, sampleRate) {
+    // Key detection disabled: CEP 12 CEF renderer crashes when loading the
+    // 2.5 MB essentia WASM even inside a Worker. Skip until a streaming
+    // WASM build is available. BPM analysis is unaffected.
+    return Promise.reject(new Error("Key detection disabled in CEP 12."));
+
+    /* eslint-disable no-unreachable */
     if (typeof Worker === "undefined") {
       // Fallback for environments without Worker support.
       return computeChromagram(pcm, sampleRate).then(runKeyDetection);
