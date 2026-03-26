@@ -62,13 +62,14 @@
    *   resolution for typical music (60–200 BPM).
    *
    * hopSize (step between consecutive windows):
-   *   512 samples = bufferSize / 2.  50 % overlap is the standard
-   *   trade-off between temporal resolution and redundant computation.
+   *   256 samples ≈ 5.8 ms at 44 100 Hz.  Smaller hop = finer temporal
+   *   resolution for getLastMs() beat positions, improving marker placement
+   *   accuracy at the cost of ~2× more tempo.do() calls (still fast in WASM).
    *   aubio's Tempo internally zero-pads its input to bufferSize, so
    *   feeding hopSize-length frames is correct.
    */
   var AUBIO_BUFFER_SIZE = 1024;
-  var AUBIO_HOP_SIZE    = 512;
+  var AUBIO_HOP_SIZE    = 256;
 
   /**
    * RMS amplitude below which a track is considered silent.
@@ -437,10 +438,12 @@
     if (typeof tempo.delete === "function") tempo.delete();
     else if (typeof tempo.free === "function") tempo.free();
 
-    var beatTimestamps = new Float32Array(beatTimesMs.length);
+    var rawTimestamps = new Float32Array(beatTimesMs.length);
     for (var j = 0; j < beatTimesMs.length; j++) {
-      beatTimestamps[j] = beatTimesMs[j] / 1000;
+      rawTimestamps[j] = beatTimesMs[j] / 1000;
     }
+
+    var beatTimestamps = snapToGrid(rawTimestamps, bpm);
 
     return { bpm: bpm, beatTimestamps: beatTimestamps };
   }
@@ -554,6 +557,57 @@
     }
 
     return Math.round(bpm * 100) / 100;  // two decimal places
+  }
+
+  /**
+   * Snaps raw aubio beat timestamps onto the nearest point of a regular BPM
+   * grid, correcting per-frame onset jitter without forcing strict quantisation.
+   *
+   * How it works
+   * ------------
+   * 1. Derive the beat period from the detected BPM.
+   * 2. Estimate the phase of the beat sequence: for each timestamp, compute
+   *    its position within a single beat period (timestamp mod period).
+   *    The median of these values is a robust estimate of the grid phase that
+   *    is resistant to isolated missed or doubled beats.
+   * 3. For each beat, find the nearest ideal grid point (phase + N × period).
+   *    If the beat is within SNAP_TOLERANCE of that grid point, snap it there.
+   *    Beats further away are left at their raw aubio position so that
+   *    genuine tempo variations (e.g. live rubato) are preserved.
+   *
+   * SNAP_TOLERANCE = 25 % of the beat period. At 120 BPM (period = 0.5 s)
+   * this allows snapping up to ±125 ms — enough to correct detection jitter
+   * while still keeping deliberately off-grid beats untouched.
+   *
+   * @param  {Float32Array} timestamps  Beat positions in seconds (aubio output).
+   * @param  {number}       bpm         Detected BPM used to define the grid.
+   * @returns {Float32Array}            Snapped timestamps (same length).
+   */
+  function snapToGrid(timestamps, bpm) {
+    if (!timestamps || timestamps.length < 2 || bpm <= 0) return timestamps;
+
+    var period    = 60.0 / bpm;          // seconds per beat
+    var tolerance = period * 0.25;       // ±25 % of one beat period
+
+    // Estimate phase as the median of (timestamp mod period).
+    var mods = [];
+    for (var i = 0; i < timestamps.length; i++) {
+      mods.push(timestamps[i] % period);
+    }
+    mods.sort(function (a, b) { return a - b; });
+    var mid   = Math.floor(mods.length / 2);
+    var phase = mods.length % 2 === 0
+      ? (mods[mid - 1] + mods[mid]) / 2
+      : mods[mid];
+
+    var snapped = new Float32Array(timestamps.length);
+    for (var j = 0; j < timestamps.length; j++) {
+      var t          = timestamps[j];
+      var gridIndex  = Math.round((t - phase) / period);
+      var gridPoint  = phase + gridIndex * period;
+      snapped[j]     = Math.abs(t - gridPoint) <= tolerance ? gridPoint : t;
+    }
+    return snapped;
   }
 
   /* ═══════════════════════════════════════════════════════════════════ */
