@@ -40,9 +40,7 @@
           <MainPath>./index.html</MainPath>
           <ScriptPath>./jsx/hostScript.jsx</ScriptPath>
           <CEFCommandLine>
-            <!-- Required for cep_node (Node.js integration) and evalScript bridge -->
-            <Parameter>--mixed-context</Parameter>
-            <!-- Allow local file reads for audio files loaded from disk -->
+            <!-- Allow local file reads for audio files loaded from disk via XHR -->
             <Parameter>--allow-file-access-from-files</Parameter>
             <Parameter>--allow-universal-access-from-files</Parameter>
           </CEFCommandLine>
