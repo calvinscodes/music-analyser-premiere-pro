@@ -134,7 +134,22 @@
      *   autoPlaceAndMark() — from placement.startSeconds  (just-dropped file on A2)
      * Reset to 0 on clearResults().
      */
-    clipStartSeconds: 0
+    clipStartSeconds: 0,
+
+    /**
+     * In-point of the clip in the source file (seconds).
+     * When the clip is trimmed, beats before this time are outside the clip
+     * and must be excluded from marker placement.
+     * 0 for untrimmed clips.
+     */
+    clipInSeconds: 0,
+
+    /**
+     * Out-point of the clip in the source file (seconds).
+     * Beats after this time are outside the clip and excluded from placement.
+     * Infinity for untrimmed clips (no upper bound).
+     */
+    clipOutSeconds: Infinity
   };
 
   /* ═══════════════════════════════════════════════════════════════════ */
@@ -259,10 +274,12 @@
     dom.addMarkersBtn.disabled = true;
     dom.addMarkersBtn.setAttribute("aria-disabled", "true");
 
-    state.beatTimestamps  = null;
-    state.lastResult      = null;
-    state.markerStride    = 1;
+    state.beatTimestamps   = null;
+    state.lastResult       = null;
+    state.markerStride     = 1;
     state.clipStartSeconds = 0;
+    state.clipInSeconds    = 0;
+    state.clipOutSeconds   = Infinity;
   }
 
   /**
@@ -422,8 +439,12 @@
     dom.filePathDisplay.textContent = label;
     dom.filePathDisplay.title       = filePath;
     state.filePath                  = filePath;
-    // Offset so beat markers land at the correct sequence position.
     state.clipStartSeconds          = pathResult.startSeconds || 0;
+    state.clipInSeconds             = pathResult.inSeconds    || 0;
+    // outSeconds is 0 for unset/unknown — treat 0 as no upper bound.
+    state.clipOutSeconds            = (pathResult.outSeconds > 0)
+                                        ? pathResult.outSeconds
+                                        : Infinity;
 
     if (pathResult.isVideoFile) {
       appendLog(
@@ -663,14 +684,21 @@
       return;
     }
 
-    // Build timestamp array: apply stride and sequence-position offset.
-    // state.clipStartSeconds is 0 when the clip position is unknown (browser
-    // mode, or analysis run before the clip was placed) and non-zero after a
-    // hosted "Analyse Active Clip" or drag-and-drop auto-place.
-    var offset = state.clipStartSeconds || 0;
+    // Build timestamp array: filter to the trimmed region, apply stride,
+    // and convert file-relative times to sequence-absolute positions.
+    //
+    // Timeline position = (file_time - clipInSeconds) + clipStartSeconds
+    //
+    // For untrimmed clips clipInSeconds = 0, so this reduces to the old
+    // behaviour of just adding clipStartSeconds.
+    var inPt    = state.clipInSeconds    || 0;
+    var outPt   = state.clipOutSeconds;
+    var offset  = (state.clipStartSeconds || 0) - inPt;
     var strided = [];
     for (var si = 0; si < beatCount; si += state.markerStride) {
-      strided.push(state.beatTimestamps[si] + offset);
+      var t = state.beatTimestamps[si];
+      if (t < inPt || t > outPt) continue;   // outside trimmed region
+      strided.push(t + offset);
     }
     var timestamps = new Float32Array(strided);
 
@@ -784,10 +812,14 @@
       );
     }
 
-    var offset  = startOffsetSeconds || 0;
+    var inPt    = state.clipInSeconds  || 0;
+    var outPt   = state.clipOutSeconds;
+    var offset  = (startOffsetSeconds || 0) - inPt;
     var strided = [];
     for (var si = 0; si < beatCount; si += autoStride) {
-      strided.push(state.beatTimestamps[si] + offset);
+      var t = state.beatTimestamps[si];
+      if (t < inPt || t > outPt) continue;   // outside trimmed region
+      strided.push(t + offset);
     }
     var timestamps = new Float32Array(strided);
 
