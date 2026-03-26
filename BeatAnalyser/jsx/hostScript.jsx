@@ -583,8 +583,8 @@ function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate, markerOff
         continue;
       }
 
-      var ticks  = _secondsToTicks(seconds);
-      var marker = markers.createMarker(ticks);
+      // createMarker() accepts a position in seconds (Number), not ticks.
+      var marker = markers.createMarker(seconds);
 
       marker.name     = "Beat " + (labelOffset + placed + 1);  // "Beat 1", "Beat 2", …
       marker.type     = "Comment";                // green marker in timeline
