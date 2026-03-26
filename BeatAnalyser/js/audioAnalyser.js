@@ -915,8 +915,55 @@
    * @param  {number}       sampleRate
    * @returns {Promise<{ key, scale, keyStrength }>}
    */
+  /**
+   * Runs key detection via a Web Worker (essentiaWorker.js) to avoid CEP's
+   * main-thread WASM compilation restriction on buffers > 4 KB.
+   * Falls back to the in-process path if Workers are unavailable.
+   */
   function computeChromaAndKey(pcm, sampleRate) {
-    return computeChromagram(pcm, sampleRate).then(runKeyDetection);
+    if (typeof Worker === "undefined") {
+      // Fallback for environments without Worker support.
+      return computeChromagram(pcm, sampleRate).then(runKeyDetection);
+    }
+
+    return new Promise(function (resolve, reject) {
+      var worker;
+      try {
+        worker = new Worker("js/essentiaWorker.js");
+      } catch (e) {
+        // Worker creation failed — fall back to in-process.
+        return computeChromagram(pcm, sampleRate).then(runKeyDetection).then(resolve, reject);
+      }
+
+      var timeout = setTimeout(function () {
+        worker.terminate();
+        reject(new Error("Key detection worker timed out after 60 s."));
+      }, 60000);
+
+      worker.onmessage = function (e) {
+        clearTimeout(timeout);
+        worker.terminate();
+        var data = e.data;
+        if (data.type === "keyResult") {
+          resolve(data.result);
+        } else {
+          reject(new Error(data.message || "Key detection worker error."));
+        }
+      };
+
+      worker.onerror = function (e) {
+        clearTimeout(timeout);
+        worker.terminate();
+        reject(new Error("Key detection worker error: " + (e.message || e)));
+      };
+
+      // Transfer the PCM buffer to the worker (zero-copy).
+      var transferBuf = pcm.buffer.slice(0);
+      worker.postMessage(
+        { type: "analyseKey", pcm: new Float32Array(transferBuf), sampleRate: sampleRate },
+        [transferBuf]
+      );
+    });
   }
 
   /* ═══════════════════════════════════════════════════════════════════ */

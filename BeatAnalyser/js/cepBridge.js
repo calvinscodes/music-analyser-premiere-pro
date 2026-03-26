@@ -444,80 +444,48 @@
    * @throws  {FileReadError}  File not found, permission denied, or I/O error.
    */
   function readFileAsArrayBuffer(filePath) {
+    if (typeof filePath !== "string" || filePath.trim() === "") {
+      return Promise.reject(new BridgeError(
+        "readFileAsArrayBuffer: filePath must be a non-empty string."
+      ));
+    }
+
+    // CEP 12 no longer exposes cep_node via --mixed-context. Use XHR with
+    // file:// protocol instead — works with --allow-file-access-from-files.
     return new Promise(function (resolve, reject) {
+      // Convert OS path to a file:// URL.
+      // macOS/Linux: /path/to/file  →  file:///path/to/file
+      // Windows:     C:\path\file   →  file:///C:/path/file
+      var normalised = filePath.replace(/\\/g, "/");
+      var url = normalised.match(/^[a-zA-Z]:\//)
+        ? "file:///" + normalised          // Windows absolute path
+        : "file://" + normalised;          // POSIX absolute path
 
-      /* ── Check cep_node availability ──────────────────────────────── */
-      if (!_cepNode) {
-        return reject(new BridgeError(
-          "readFileAsArrayBuffer: cep_node is not available. " +
-          "This function requires a CEP panel running inside Premiere Pro. " +
-          "Ensure --mixed-context is set in CSXS/manifest.xml CEFCommandLine."
-        ));
-      }
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", url, true);
+      xhr.responseType = "arraybuffer";
 
-      /* ── Acquire Node.js fs module ────────────────────────────────── */
-      var fs;
-      try {
-        fs = _cepNode.require("fs");
-      } catch (requireErr) {
-        return reject(new BridgeError(
-          "readFileAsArrayBuffer: cep_node.require('fs') failed. " +
-          "This usually means --mixed-context is missing from the CEF command line. " +
-          "Original error: " + requireErr.message
-        ));
-      }
-
-      if (typeof filePath !== "string" || filePath.trim() === "") {
-        return reject(new BridgeError(
-          "readFileAsArrayBuffer: filePath must be a non-empty string."
-        ));
-      }
-
-      /* ── Read the file ────────────────────────────────────────────── */
-      fs.readFile(filePath, function (err, nodeBuffer) {
-        if (err) {
-          /*
-           * Map Node.js error codes to descriptive, actionable messages.
-           *
-           * ENOENT — file doesn't exist; getAudioFilePath() returned a stale path.
-           * EACCES — OS-level read permission denied; unusual for media files
-           *          but can happen on network shares or strict sandboxes.
-           * EISDIR — caller passed a directory path instead of a file.
-           */
-          var code = err.code || "UNKNOWN";
-          var hint = "";
-          if (code === "ENOENT") {
-            hint = " The path returned by getAudioFilePath() may be stale. " +
-                   "Check that the clip is still online in the project.";
-          } else if (code === "EACCES") {
-            hint = " Check file permissions. " +
-                   "If the file is on a network share, ensure the OS user has read access.";
-          } else if (code === "EISDIR") {
-            hint = " The path points to a directory, not a file.";
-          }
-          return reject(new FileReadError(
-            "Could not read \"" + filePath + "\": " + err.message + "." + hint,
-            code
+      xhr.onload = function () {
+        // file:// responses have status 0 (success) in CEF — treat 0 and 200 as OK.
+        if (xhr.status === 0 || xhr.status === 200) {
+          resolve(xhr.response);
+        } else {
+          reject(new FileReadError(
+            "Could not read \u201c" + filePath + "\u201d: HTTP " + xhr.status,
+            "HTTP_" + xhr.status
           ));
         }
+      };
 
-        /* ── Convert Node.js Buffer → dedicated ArrayBuffer ──────────── */
-        var arrayBuffer;
-        try {
-          arrayBuffer = nodeBuffer.buffer.slice(
-            nodeBuffer.byteOffset,
-            nodeBuffer.byteOffset + nodeBuffer.byteLength
-          );
-        } catch (sliceErr) {
-          return reject(new FileReadError(
-            "Read succeeded but Buffer → ArrayBuffer conversion failed: " +
-            sliceErr.message,
-            "CONVERT_ERROR"
-          ));
-        }
+      xhr.onerror = function () {
+        reject(new FileReadError(
+          "Could not read \u201c" + filePath + "\u201d. " +
+          "Check the file exists and the path is correct.",
+          "XHR_ERROR"
+        ));
+      };
 
-        resolve(arrayBuffer);
-      });
+      xhr.send();
     });
   }
 
