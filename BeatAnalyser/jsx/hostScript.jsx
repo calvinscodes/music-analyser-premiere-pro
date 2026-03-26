@@ -522,6 +522,31 @@ function clearBeatMarkers() {
   }
 }
 
+/**
+ * removeBeatMarkers — public API for the Clear button.
+ * Removes all sequence markers whose names start with the given prefix.
+ * @param {string} prefix  e.g. "Beat"
+ */
+function removeBeatMarkers(prefix) {
+  try {
+    var seq = _requireActiveSequence();
+    var markers = seq.markers;
+    var removed = 0;
+    var cursor = markers.getFirstMarker();
+    while (cursor !== undefined) {
+      var next = markers.getNextMarker(cursor);
+      if (cursor.name && cursor.name.indexOf(prefix) === 0) {
+        markers.deleteMarker(cursor);
+        removed++;
+      }
+      cursor = next;
+    }
+    return _ok({ markersRemoved: removed });
+  } catch (e) {
+    return _err(e.message);
+  }
+}
+
 function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate, markerOffset) {
   try {
     var seq = _requireActiveSequence();
@@ -544,22 +569,9 @@ function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate, markerOff
 
     var seqDurationSeconds = seq.end.seconds;
 
-    /* ── markers (no clearing here — caller invokes clearBeatMarkers first) */
-    var markers  = seq.markers;
-    var removed  = 0;
-    var beatLabelRe = /^Beat \d+$/;
-
-    var cursor = markers.getFirstMarker();
-    while (cursor !== undefined) {
-      var nextCursor = markers.getNextMarker(cursor);
-      if (beatLabelRe.test(cursor.name)) {
-        markers.deleteMarker(cursor);
-        removed++;
-      }
-      cursor = nextCursor;
-    }
-
     /* ── insert new markers ─────────────────────────────────────────── */
+    var markers     = seq.markers;
+    var removed     = 0;
     var placed      = 0;
     var skipped     = 0;
     var outOfBounds = [];
