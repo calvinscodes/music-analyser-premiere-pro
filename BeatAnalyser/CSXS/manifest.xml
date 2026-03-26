@@ -40,22 +40,12 @@
           <MainPath>./index.html</MainPath>
           <ScriptPath>./jsx/hostScript.jsx</ScriptPath>
           <CEFCommandLine>
-            <!--
-              --mixed-context: lets evalScript bridge reach the CEF JS heap,
-              required for passing large typed arrays to/from ExtendScript.
-            -->
+            <!-- mixed-context: lets evalScript bridge reach the CEF JS heap -->
             <Parameter>--mixed-context</Parameter>
-            <!--
-              SharedArrayBuffer + Atomics are required by the aubio.js and
-              essentia.js WASM multi-threaded builds. CEF blocks SAB by default
-              unless the two flags below are set together.
-            -->
+            <!-- SharedArrayBuffer support for aubio.js and essentia.js WASM -->
             <Parameter>--enable-blink-features=SharedArrayBuffer</Parameter>
             <Parameter>--disable-web-security</Parameter>
-            <!--
-              Allow local filesystem reads (file:// XHR) so audioAnalyser.js
-              can fetch audio files from disk without a local HTTP server.
-            -->
+            <!-- Allow local file reads for audio files loaded from disk -->
             <Parameter>--allow-file-access-from-files</Parameter>
             <Parameter>--allow-universal-access-from-files</Parameter>
           </CEFCommandLine>
@@ -65,26 +55,12 @@
           <AutoVisible>true</AutoVisible>
         </Lifecycle>
 
-        <!--
-          DEVELOPMENT ONLY — allows the extension to load without a valid
-          code-signing certificate. Remove (or set to false) before shipping.
-
-          On macOS: sudo defaults write /Library/Preferences/com.adobe.CSXS.11 PlayerDebugMode 1
-          On Windows: HKEY_CURRENT_USER\Software\Adobe\CSXS.11  →  PlayerDebugMode = 1
-          Both registry/plist approaches are equivalent; this manifest flag is
-          the in-bundle way to declare the same intent.
-        -->
+        <!-- DEVELOPMENT ONLY: extension loads without a code-signing certificate -->
         <Permissions>
           <AllowedPrivilegedActions>
-            <!--
-              FS permission exposes CEP's cep.fs.* API:
-              readFile, writeFile, readdir, stat, makedir, etc.
-            -->
+            <!-- fs: exposes cep.fs API for reading/writing local files -->
             <Privilege>fs</Privilege>
-            <!--
-              network permission allows XMLHttpRequest to arbitrary origins,
-              needed when fetching WASM module CDN fallbacks in development.
-            -->
+            <!-- network: allows XHR to external origins for WASM CDN fallback -->
             <Privilege>network</Privilege>
           </AllowedPrivilegedActions>
         </Permissions>
