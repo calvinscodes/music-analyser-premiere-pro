@@ -303,7 +303,13 @@
      *   placeMarkersAtTimecodes("[ 0.5, 1.0 ]", 25)
      * and JSON.parse("[ 0.5, 1.0 ]") → [0.5, 1.0]  ✓
      */
-    var timecodeJson = JSON.stringify(Array.from(beatTimestamps));
+    // Round to 3 decimal places (1 ms precision) before serialising.
+    // CEP's evalScript has a ~8 KB string limit per call; full float64 precision
+    // (e.g. 1.6544218063354492) on 300+ timestamps easily exceeds it.
+    var rounded = Array.from(beatTimestamps).map(function (t) {
+      return Math.round(t * 1000) / 1000;
+    });
+    var timecodeJson = JSON.stringify(rounded);
     return evalScript("placeMarkersAtTimecodes", timecodeJson, frameRate);
   }
 
