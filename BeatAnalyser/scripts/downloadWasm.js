@@ -20,11 +20,19 @@ const url    = require("url");
 
 const FORCE  = process.argv.includes("--force");
 const LIB    = path.join(__dirname, "..", "lib");
+const ROOT   = path.join(__dirname, "..");
 
 /** Minimum byte size that indicates a real bundle (not a stub/error page). */
 const MIN_VALID_BYTES = 10 * 1024; // 10 KB
 
 const BUNDLES = [
+    {
+        name: "CSInterface.js",
+        dest: ROOT,   // goes in extension root, not lib/
+        urls: [
+            "https://raw.githubusercontent.com/Adobe-CEP/CSInterface/master/src/CSInterface.js"
+        ]
+    },
     {
         name: "aubio.js",
         // Use the package root URL — both CDNs redirect to the package's `main`
@@ -152,7 +160,7 @@ async function main() {
 
     for (var i = 0; i < BUNDLES.length; i++) {
         var bundle = BUNDLES[i];
-        var dest   = path.join(LIB, bundle.name);
+        var dest   = path.join(bundle.dest || LIB, bundle.name);
 
         // Skip if already a valid-sized file (and not forced)
         if (!FORCE && fs.existsSync(dest)) {

@@ -415,12 +415,18 @@
       var frameStart = i * AUBIO_HOP_SIZE;
       var frame      = pcm.slice(frameStart, frameStart + AUBIO_HOP_SIZE);
 
-      tempo.do(frame);
+      // aubiojs v0.2.x: tempo.do() returns 1 when a beat is detected, 0 otherwise.
+      // Older v0.1.x had a separate tempo.getBeat() method which no longer exists.
+      var isBeat = tempo.do(frame);
 
-      if (tempo.getBeat()) {
+      if (isBeat) {
         // getLastMs() returns the beat position in ms from the stream start
         // (not relative to the current frame) — sub-frame accurate.
-        beatTimesMs.push(tempo.getLastMs());
+        // Fall back to frame midpoint if the method is absent in a future build.
+        var ms = typeof tempo.getLastMs === "function"
+          ? tempo.getLastMs()
+          : ((frameStart + AUBIO_HOP_SIZE / 2) / sampleRate) * 1000;
+        beatTimesMs.push(ms);
       }
     }
 
@@ -1055,7 +1061,13 @@
     //
     var results = await Promise.all([
       runAubioTempo(pcm, ANALYSIS_SAMPLE_RATE),
-      computeChromaAndKey(pcm, ANALYSIS_SAMPLE_RATE)
+      computeChromaAndKey(pcm, ANALYSIS_SAMPLE_RATE).catch(function (err) {
+        // Key detection is non-fatal. CEP panels restrict synchronous WASM
+        // compilation on the main thread; essentia.js may fail to initialise
+        // in some host environments. BPM analysis proceeds regardless.
+        console.warn("[audioAnalyser] Key detection unavailable: " + err.message);
+        return { key: "\u2014", scale: "\u2014", keyStrength: 0 };
+      })
     ]);
 
     var tempoResult = results[0];
