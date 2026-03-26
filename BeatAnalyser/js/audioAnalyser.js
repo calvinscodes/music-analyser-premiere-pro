@@ -514,7 +514,7 @@
    *
    * @param  {number[]} beatTimesMs  Beat positions in milliseconds.
    * @param  {number}   sampleRate   Used only for the error message.
-   * @returns {number}  BPM rounded to two decimal places.
+   * @returns {number}  BPM rounded to the nearest 5 (e.g. 121.6 → 120, 123 → 125).
    * @throws  {InsufficientBeatsError}
    */
   function deriveBpm(beatTimesMs, sampleRate) {
@@ -556,7 +556,7 @@
       );
     }
 
-    return Math.round(bpm * 100) / 100;  // two decimal places
+    return Math.round(bpm / 5) * 5;  // round to nearest 5 BPM (e.g. 121.6 → 120)
   }
 
   /**
