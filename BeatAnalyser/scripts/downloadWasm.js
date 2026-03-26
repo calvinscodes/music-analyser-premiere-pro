@@ -29,8 +29,12 @@ const BUNDLES = [
     {
         name: "CSInterface.js",
         dest: ROOT,   // goes in extension root, not lib/
+        optional: true,
         urls: [
-            "https://raw.githubusercontent.com/Adobe-CEP/CSInterface/master/src/CSInterface.js"
+            "https://raw.githubusercontent.com/Adobe-CEP/CSInterface/main/src/CSInterface.js",
+            "https://raw.githubusercontent.com/Adobe-CEP/CSInterface/master/src/CSInterface.js",
+            "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/master/CEP_12.x/CSInterface.js",
+            "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/master/CEP_11.x/CSInterface.js"
         ]
     },
     {
@@ -176,13 +180,21 @@ async function main() {
 
         try {
             var bytes = await tryUrls(bundle.urls, dest);
-            ok(bundle.name + " → lib/ (" + Math.round(bytes / 1024) + " KB)");
+            var destLabel = bundle.dest ? path.basename(bundle.dest) + "/" : "lib/";
+            ok(bundle.name + " → " + destLabel + " (" + Math.round(bytes / 1024) + " KB)");
         } catch (err) {
-            fail("Could not download " + bundle.name + ": " + err.message);
-            warn("Try: npm run download-wasm --force");
-            warn("Or download manually into lib/:");
-            bundle.urls.forEach(function(u) { warn("  " + u); });
-            allOk = false;
+            if (bundle.optional) {
+                warn("Could not download optional " + bundle.name + ": " + err.message);
+                warn("Download manually from one of:");
+                bundle.urls.forEach(function(u) { warn("  " + u); });
+                warn("Place it at: " + dest);
+            } else {
+                fail("Could not download " + bundle.name + ": " + err.message);
+                warn("Try: npm run download-wasm --force");
+                warn("Or download manually into lib/:");
+                bundle.urls.forEach(function(u) { warn("  " + u); });
+                allOk = false;
+            }
         }
     }
 
