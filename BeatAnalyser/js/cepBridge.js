@@ -303,14 +303,46 @@
      *   placeMarkersAtTimecodes("[ 0.5, 1.0 ]", 25)
      * and JSON.parse("[ 0.5, 1.0 ]") → [0.5, 1.0]  ✓
      */
-    // Round to 3 decimal places (1 ms precision) before serialising.
-    // CEP's evalScript has a ~8 KB string limit per call; full float64 precision
-    // (e.g. 1.6544218063354492) on 300+ timestamps easily exceeds it.
+    // Round to 2 decimal places (10 ms precision) — plenty for beat markers.
     var rounded = Array.from(beatTimestamps).map(function (t) {
-      return Math.round(t * 1000) / 1000;
+      return Math.round(t * 100) / 100;
     });
-    var timecodeJson = JSON.stringify(rounded);
-    return evalScript("placeMarkersAtTimecodes", timecodeJson, frameRate);
+
+    // CEP evalScript has a hard string-length limit (~1-2 KB per call).
+    // Split into batches of 50, clear existing Beat markers once before the
+    // first batch, then append subsequent batches with a label offset so
+    // marker names stay sequential ("Beat 1", "Beat 2", …).
+    var BATCH = 50;
+    var totalPlaced  = 0;
+    var totalSkipped = 0;
+    var totalRemoved = 0;
+
+    return evalScript("clearBeatMarkers").then(function (clearResult) {
+      if (clearResult && clearResult.removed) totalRemoved = clearResult.removed;
+
+      var batches = [];
+      for (var b = 0; b < rounded.length; b += BATCH) {
+        batches.push(rounded.slice(b, b + BATCH));
+      }
+
+      // Process batches sequentially (each depends on the previous label offset).
+      return batches.reduce(function (promise, batch, idx) {
+        return promise.then(function () {
+          var offset = idx * BATCH;
+          return evalScript(
+            "placeMarkersAtTimecodes",
+            JSON.stringify(batch),
+            frameRate,
+            offset
+          ).then(function (result) {
+            totalPlaced  += result.placed  || 0;
+            totalSkipped += result.skipped || 0;
+          });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      return { placed: totalPlaced, skipped: totalSkipped, removed: totalRemoved };
+    });
   }
 
   /**

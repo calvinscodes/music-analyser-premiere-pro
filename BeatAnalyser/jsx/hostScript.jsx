@@ -500,7 +500,29 @@ function getActiveSequenceAudioPath() {
  *
  * @returns {string} JSON envelope
  */
-function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate) {
+/**
+ * clearBeatMarkers — removes all Beat markers from the active sequence.
+ * Called before the first batch when placing markers in multiple evalScript calls.
+ */
+function clearBeatMarkers() {
+  try {
+    var seq = _requireActiveSequence();
+    var markers = seq.markers;
+    var removed = 0;
+    var beatLabelRe = /^Beat \d+$/;
+    var cursor = markers.getFirstMarker();
+    while (cursor !== undefined) {
+      var next = markers.getNextMarker(cursor);
+      if (beatLabelRe.test(cursor.name)) { markers.deleteMarker(cursor); removed++; }
+      cursor = next;
+    }
+    return _ok({ removed: removed });
+  } catch (e) {
+    return _err(e.message);
+  }
+}
+
+function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate, markerOffset) {
   try {
     var seq = _requireActiveSequence();
 
@@ -517,14 +539,15 @@ function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate) {
     }
 
     var fps = parseFloat(sequenceFrameRate) || 0;
-    // sequenceFrameRate is informational; a bad value doesn't block placement.
+    // markerOffset is the beat number to start labelling from (for batching).
+    var labelOffset = parseInt(markerOffset, 10) || 0;
 
     var seqDurationSeconds = seq.end.seconds;
 
-    /* ── remove existing Beat markers ───────────────────────────────── */
+    /* ── markers (no clearing here — caller invokes clearBeatMarkers first) */
     var markers  = seq.markers;
     var removed  = 0;
-    var beatLabelRe = /^Beat \d+$/;  // ExtendScript has RegExp
+    var beatLabelRe = /^Beat \d+$/;
 
     var cursor = markers.getFirstMarker();
     while (cursor !== undefined) {
@@ -563,7 +586,7 @@ function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate) {
       var ticks  = _secondsToTicks(seconds);
       var marker = markers.createMarker(ticks);
 
-      marker.name     = "Beat " + (placed + 1);  // "Beat 1", "Beat 2", …
+      marker.name     = "Beat " + (labelOffset + placed + 1);  // "Beat 1", "Beat 2", …
       marker.type     = "Comment";                // green marker in timeline
       marker.comments = "BeatAnalyser — " +
                         (fps > 0 ? ("frame " + Math.round(seconds * fps) + " @ " + fps + "fps — ") : "") +
