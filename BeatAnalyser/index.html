@@ -13,13 +13,11 @@
   -->
   <script src="CSInterface.js"></script>
 
-  <!--
-    WASM bundles.  Not committed to the repo — run `npm install` to copy them
-    from node_modules into lib/.  See lib/aubio.js and lib/essentia.js for
-    stub files and installation instructions.
-  -->
+  <!-- aubio.js WASM — BPM detection (loaded on main thread, small enough) -->
   <script src="lib/aubio.js"></script>
-  <script src="lib/essentia.js"></script>
+  <!-- essentia.js is loaded inside js/essentiaWorker.js via importScripts()
+       to avoid CEP's main-thread WASM compilation restriction. Do NOT load
+       it here as a script tag — it will throw and crash the panel. -->
 </head>
 
 <body>
