@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<ExtensionManifest Version="11.0"
+<ExtensionManifest Version="12.0"
   ExtensionBundleId="com.beatanalyser.panel"
   ExtensionBundleVersion="1.0.0"
   ExtensionBundleName="Beat Analyser"
@@ -28,7 +28,7 @@
     </LocaleList>
 
     <RequiredRuntimeList>
-      <RequiredRuntime Name="CSXS" Version="11.0" />
+      <RequiredRuntime Name="CSXS" Version="12.0" />
     </RequiredRuntimeList>
   </ExecutionEnvironment>
 
@@ -40,11 +40,8 @@
           <MainPath>./index.html</MainPath>
           <ScriptPath>./jsx/hostScript.jsx</ScriptPath>
           <CEFCommandLine>
-            <!-- mixed-context: lets evalScript bridge reach the CEF JS heap -->
-            <Parameter>--mixed-context</Parameter>
             <!-- SharedArrayBuffer support for aubio.js and essentia.js WASM -->
             <Parameter>--enable-blink-features=SharedArrayBuffer</Parameter>
-            <Parameter>--disable-web-security</Parameter>
             <!-- Allow local file reads for audio files loaded from disk -->
             <Parameter>--allow-file-access-from-files</Parameter>
             <Parameter>--allow-universal-access-from-files</Parameter>
