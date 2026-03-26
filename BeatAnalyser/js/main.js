@@ -602,13 +602,11 @@
 
       if (cepBridge.isHosted) {
         // §6a — get path from active sequence
-        appendLog("Step 1/3: Getting active clip path…");
         var filePath = await loadHostedClip();
 
         // §6b — read file bytes via XHR
-        appendLog("Step 2/3: Reading audio file…");
+        appendLog("Reading audio: " + basename(filePath));
         arrayBuffer = await cepBridge.readFileAsArrayBuffer(filePath);
-        appendLog("Step 2/3: File read OK (" + arrayBuffer.byteLength + " bytes)");
 
       } else {
         // Browser / dev fallback
@@ -900,17 +898,14 @@
 
       try {
         // Read audio bytes for analysis.
-        appendLog("Step 1/3: Reading file bytes…");
+        appendLog("Reading dropped file: " + displayName);
         var arrayBuffer = await readFileFromDrop(file);
 
         // Analyse BPM + key (stores results in state).
-        appendLog("Step 2/3: Analysing audio (BPM)…");
         await runAnalysis(arrayBuffer);
-        appendLog("Step 2/3 complete.");
 
         // In hosted mode: import into project, place on A2, place markers.
         if (cepBridge.isHosted) {
-          appendLog("Step 3/3: Placing on timeline…");
           // CEF/Chromium exposes the OS path as a non-standard file.path
           // property on File objects obtained via drag-and-drop.
           var osPath = file.path || "";
