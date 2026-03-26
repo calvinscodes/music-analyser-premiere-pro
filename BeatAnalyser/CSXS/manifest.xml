@@ -91,4 +91,12 @@
     </Extension>
   </DispatchInfoList>
 
+  <DebugConfiguration>
+    <Extension Id="com.beatanalyser.panel">
+      <HostList>
+        <Host Name="PPRO" Port="7778" />
+      </HostList>
+    </Extension>
+  </DebugConfiguration>
+
 </ExtensionManifest>
