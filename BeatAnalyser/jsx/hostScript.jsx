@@ -550,8 +550,11 @@ function placeMarkersAtTimecodes(timecodeArrayJSON, sequenceFrameRate) {
         continue;
       }
 
-      // Clamp check: marker beyond sequence end would be invisible / confusing.
-      if (seconds > seqDurationSeconds) {
+      // Clamp check: skip markers beyond sequence end.
+      // Guard: seqDurationSeconds can read back as 0 in newer Premiere builds
+      // before the timeline has fully updated — skip the check in that case
+      // so markers are not wrongly rejected.
+      if (seqDurationSeconds > 0 && seconds > seqDurationSeconds) {
         skipped++;
         outOfBounds.push(seconds);
         continue;
