@@ -40,8 +40,8 @@
           <MainPath>./index.html</MainPath>
           <ScriptPath>./jsx/hostScript.jsx</ScriptPath>
           <CEFCommandLine>
-            <!-- SharedArrayBuffer support for aubio.js and essentia.js WASM -->
-            <Parameter>--enable-blink-features=SharedArrayBuffer</Parameter>
+            <!-- Required for cep_node (Node.js integration) and evalScript bridge -->
+            <Parameter>--mixed-context</Parameter>
             <!-- Allow local file reads for audio files loaded from disk -->
             <Parameter>--allow-file-access-from-files</Parameter>
             <Parameter>--allow-universal-access-from-files</Parameter>

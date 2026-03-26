@@ -403,10 +403,10 @@
    * @returns {{ bpm: number, beatTimestamps: Float32Array }}
    * @throws  {InsufficientBeatsError}  propagated from deriveBpm when < MIN_BEATS_FOR_BPM.
    */
-  function _runTempoLoop(aubioModule, pcm, sampleRate, method) {
-    var tempo = method
-      ? new aubioModule.Tempo(method, AUBIO_BUFFER_SIZE, AUBIO_HOP_SIZE, sampleRate)
-      : new aubioModule.Tempo(AUBIO_BUFFER_SIZE, AUBIO_HOP_SIZE, sampleRate);
+  function _runTempoLoop(aubioModule, pcm, sampleRate) {
+    // aubiojs@0.2.x only supports the 3-argument constructor.
+    // The 4-argument (method, bufferSize, hopSize, sampleRate) form was removed.
+    var tempo = new aubioModule.Tempo(AUBIO_BUFFER_SIZE, AUBIO_HOP_SIZE, sampleRate);
 
     var beatTimesMs = [];
     var numFrames   = Math.floor(pcm.length / AUBIO_HOP_SIZE);
@@ -433,7 +433,9 @@
     // deriveBpm throws InsufficientBeatsError when < MIN_BEATS_FOR_BPM beats.
     var bpm = deriveBpm(beatTimesMs, sampleRate);
 
-    tempo.free();
+    // Emscripten uses .delete() to free heap memory; .free() was an older alias.
+    if (typeof tempo.delete === "function") tempo.delete();
+    else if (typeof tempo.free === "function") tempo.free();
 
     var beatTimestamps = new Float32Array(beatTimesMs.length);
     for (var j = 0; j < beatTimesMs.length; j++) {
@@ -464,40 +466,21 @@
       var result;
 
       try {
-        result = _runTempoLoop(aubioModule, pcm, sampleRate, null);
+        result = _runTempoLoop(aubioModule, pcm, sampleRate);
 
-        // Guard against degenerate BPM values that can occur when the median
-        // IBI calculation produces Infinity or NaN (e.g. all beats at t=0).
+        // Guard against degenerate BPM values.
         if (!result.bpm || isNaN(result.bpm) || result.bpm === 0) {
-          throw new Error(
-            "Default onset method returned degenerate BPM: " + result.bpm
+          throw new InsufficientBeatsError(
+            "aubio Tempo returned degenerate BPM (" + result.bpm + "). " +
+            "The clip may have no clear rhythmic pulse, or may be too short."
           );
         }
 
         return result;
 
-      } catch (defaultErr) {
-        // Log the failure and attempt the yinfft retry.
-        console.warn(
-          "[audioAnalyser] Default onset method failed: " + defaultErr.message +
-          " — retrying with yinfft onset detection…"
-        );
-
-        // _runTempoLoop with "yinfft" may itself throw InsufficientBeatsError;
-        // if so, that error propagates naturally as the final rejection.
-        var retry = _runTempoLoop(aubioModule, pcm, sampleRate, "yinfft");
-
-        if (!retry.bpm || isNaN(retry.bpm) || retry.bpm === 0) {
-          // Both methods produced degenerate BPM — give up with a clear message.
-          throw new InsufficientBeatsError(
-            "Both default and yinfft onset methods failed to detect a stable tempo. " +
-            "The clip may have no clear rhythmic pulse, or may be too short for " +
-            "reliable beat tracking at bufferSize=" + AUBIO_BUFFER_SIZE +
-            ", hopSize=" + AUBIO_HOP_SIZE + "."
-          );
-        }
-
-        return retry;
+      } catch (err) {
+        // Re-throw so the caller can surface the error in the UI.
+        throw err;
       }
     });
   }
